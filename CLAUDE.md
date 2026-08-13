@@ -158,6 +158,46 @@ então esperas abaixo de 1s não são anunciadas e o aviso sai no máximo a cada
 O volume é grande: só a Fiat tem 585 modelos. A 40 requisições/min, uma carga completa de carros
 leva dias — prefira `--brand` por marca, com `--resume`.
 
+## Coleta sob demanda
+
+Buscar por um veículo agenda a coleta do histórico daqueles modelos. A busca só grava o pedido;
+quem fala com a FIPE é um worker separado:
+
+```bash
+python manage.py process_crawl_queue              # uma passada
+python manage.py process_crawl_queue --forever    # laço, com --interval (padrão 60s)
+python manage.py process_crawl_queue --budget 300 # menos por pedido, mais rodízio
+```
+
+**Nada coleta sozinho até o worker estar rodando.** É o preço de não usar thread na view, e o
+motivo é a cota: a janela deslizante vive na memória de um `FipeClient`, então um processo
+consumidor é a única forma de honrar 40 req/min. Dois workers web dariam 80 e trariam o 429 de
+volta. Um lock de arquivo (`.crawl_queue.lock`, via `fcntl.flock`) garante o processo único —
+por máquina, não por cluster.
+
+Períodos coletados por versão: mês atual, 3, 6 e 12 meses atrás, mais o mesmo mês a cada ano até
+`ano_da_versão + 1`. O piso é **por versão, não por modelo**: uma versão 2020 não tem preço na
+tabela de 2005, e perguntar é 404 garantido gastando um slot. Veículo 0 km (ano 32000) não tem
+passo anual.
+
+Dedup é por **cobertura de modelos**, não por semelhança de texto: um modelo pedido nas últimas
+48h não é pedido de novo, em qualquer status. Assim `palio fire` depois de `palio` não reagenda
+nada, e uma busca mais ampla agenda só a parte nova. Par `(versão, mês)` que já tem cotação é
+pulado, o que torna a repetição barata.
+
+O orçamento (`--budget`) é **por pedido dentro de uma passada**: esgotado, o worker passa ao
+próximo pedido e retoma este na passada seguinte. Sem isso, uma busca por "gol" (16 mil
+requisições, ~7h) monopolizaria a fila. Dentro de cada modelo a varredura é **por período, não
+por versão** — o mês atual de todas as versões primeiro — para que um orçamento estourado deixe
+um retrato completo do mês corrente.
+
+Fronteira, agora com teste (`web/tests/test_boundary.py`): **`web` escreve pedido, nunca executa
+coleta.**
+
+Os testes do worker fixam "hoje" em 06/2025, a tabela de referência mais nova das fixtures. Os
+períodos de uma versão saem da data corrente, então com a data real todo período pedido cairia
+fora do catálogo gravado e os testes passariam sem coletar nada.
+
 ## Web
 
 - Busca full-text (`/?q=corsa`), com filtros de combustível e ano ao lado e cards embaixo.
