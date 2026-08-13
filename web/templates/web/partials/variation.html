@@ -1,0 +1,15 @@
+{% load formatting %}
+<div class="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+  <p class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ variation.months }} meses</p>
+  {% if variation.reference_table %}
+    <p class="mt-1 text-lg font-semibold {% if variation.percent > 0 %}text-emerald-600{% elif variation.percent < 0 %}text-rose-600{% else %}text-slate-700{% endif %}">
+      {{ variation.percent|percent }}
+    </p>
+    <p class="mt-0.5 text-xs text-slate-500">
+      {{ variation.delta|signed_brl }} desde {{ variation.reference_table }}
+    </p>
+  {% else %}
+    <p class="mt-1 text-lg font-semibold text-slate-300">—</p>
+    <p class="mt-0.5 text-xs text-slate-400">sem histórico</p>
+  {% endif %}
+</div>

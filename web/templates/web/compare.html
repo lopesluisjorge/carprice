@@ -1,0 +1,99 @@
+{% extends "web/base.html" %}
+{% load formatting %}
+
+{% block title %}Comparar{% endblock %}
+
+{% block content %}
+  <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Comparar versões</h1>
+  <p class="mt-3 max-w-2xl text-slate-600">
+    Adicione até {{ max_compared }} versões. A seleção fica no endereço da página, então o link
+    pode ser copiado e compartilhado.
+  </p>
+
+  {% if not is_full %}
+    <div class="mt-8">
+      {% include "web/partials/search_form.html" with action="web:compare" field="add" submit_label="Adicionar ao comparativo" %}
+    </div>
+  {% else %}
+    <p class="mt-8 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+      Limite de {{ max_compared }} versões atingido. Remova uma para incluir outra.
+    </p>
+  {% endif %}
+
+  {% if summaries %}
+    <div class="mt-8 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <table class="w-full min-w-[36rem] border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 align-top">
+            <th class="w-32 p-4 text-left font-medium text-slate-500">Versão</th>
+            {% for summary in summaries %}
+              <th class="border-l border-slate-100 p-4 text-left">
+                <span class="block text-xs font-medium text-blue-600">{{ summary.model_year.vehicle_model.brand.name }}</span>
+                <span class="mt-0.5 block font-semibold text-slate-900">{{ summary.model_year.vehicle_model.name }}</span>
+                <span class="mt-0.5 block text-xs font-normal text-slate-500">
+                  {{ summary.model_year|model_year_label }} · {{ summary.model_year.get_fuel_type_display }}
+                </span>
+                <a href="{% url 'web:compare' %}?v={{ summary.without_me|urlencode }}"
+                   class="mt-2 inline-block text-xs font-medium text-slate-400 hover:text-rose-600">remover</a>
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-b border-slate-100">
+            <th class="p-4 text-left font-medium text-slate-500">Preço atual</th>
+            {% for summary in summaries %}
+              <td class="border-l border-slate-100 p-4 text-lg font-semibold text-slate-900">
+                {{ summary.latest.value|brl }}
+              </td>
+            {% endfor %}
+          </tr>
+
+          {% for row in variation_rows %}
+            <tr class="border-b border-slate-100">
+              <th class="p-4 text-left font-medium text-slate-500">{{ row.months }} meses</th>
+              {% for variation in row.cells %}
+                <td class="border-l border-slate-100 p-4">
+                  {% if variation.reference_table %}
+                    <span class="font-semibold {% if variation.percent > 0 %}text-emerald-600{% elif variation.percent < 0 %}text-rose-600{% else %}text-slate-700{% endif %}">
+                      {{ variation.percent|percent }}
+                    </span>
+                    <span class="mt-0.5 block text-xs text-slate-500">{{ variation.delta|signed_brl }}</span>
+                  {% else %}
+                    <span class="text-slate-300">—</span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+
+          <tr class="border-b border-slate-100">
+            <th class="p-4 text-left font-medium text-slate-500">Código FIPE</th>
+            {% for summary in summaries %}
+              <td class="border-l border-slate-100 p-4 font-mono text-xs text-slate-600">
+                {{ summary.latest.fipe_code|default:"—" }}
+              </td>
+            {% endfor %}
+          </tr>
+          <tr>
+            <th class="p-4 text-left font-medium text-slate-500">Detalhe</th>
+            {% for summary in summaries %}
+              <td class="border-l border-slate-100 p-4">
+                <a href="{% url 'web:detail' %}?v={{ summary.code|urlencode }}"
+                   class="font-medium text-blue-600 hover:underline">abrir</a>
+              </td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-6">
+      {% include "web/partials/chart.html" %}
+    </div>
+  {% else %}
+    <p class="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-10 text-center text-sm text-slate-500">
+      Nenhuma versão selecionada ainda.
+    </p>
+  {% endif %}
+{% endblock %}

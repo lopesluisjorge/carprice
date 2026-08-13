@@ -1,0 +1,18 @@
+<label class="block text-sm">
+  <span class="mb-1.5 block font-medium text-slate-700">Modelo</span>
+  <select name="model"
+          {% if vehicle_models %}
+            hx-get="{% url 'web:year_options' %}?field={{ field }}"
+            hx-target="#year-field" hx-swap="innerHTML"
+          {% else %}disabled{% endif %}
+          class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30">
+    <option value="">{% if vehicle_models %}Selecione o modelo{% else %}Escolha a marca{% endif %}</option>
+    {% for vehicle_model in vehicle_models %}
+      <option value="{{ vehicle_model.pk }}">{{ vehicle_model.name }}</option>
+    {% endfor %}
+  </select>
+</label>
+
+<div id="year-field" class="contents">
+  {% include "web/partials/year_select.html" %}
+</div>
