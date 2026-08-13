@@ -8,6 +8,7 @@ Two guarantees the rest of the project relies on:
   transaction at the end.
 """
 
+import dataclasses
 import logging
 
 from django.db import transaction
@@ -153,6 +154,122 @@ def _sync_brands(client, vehicle_type, period, progress):
         else:
             updated += 1
     return created, updated
+
+
+@dataclasses.dataclass
+class ModelsSyncResult:
+    """Counters for a models-only catalogue refresh."""
+
+    models_created: int = 0
+    models_updated: int = 0
+    years_created: int = 0
+    years_updated: int = 0
+
+    def add_model(self, created):
+        if created:
+            self.models_created += 1
+        else:
+            self.models_updated += 1
+
+    def add_year(self, created):
+        if created:
+            self.years_created += 1
+        else:
+            self.years_updated += 1
+
+
+def sync_models(
+    client,
+    vehicle_type=VehicleType.CAR,
+    period=None,
+    brand_codes=None,
+    dry_run=False,
+    progress=None,
+    progress_state=None,
+):
+    """Refresh the catalogue down to model years, without collecting prices.
+
+    Like ``sync_brands`` and for the same reason, this is a catalogue refresh,
+    not a price crawl: it creates no CrawlRun and no checkpoints, so a later
+    ``--resume`` is not misled into skipping brands whose prices were never
+    collected. ``update_or_create`` keeps names current — correcting a FIPE
+    rename and, through the FTS triggers, reindexing the model.
+
+    Returns a ``ModelsSyncResult``.
+    """
+    args = (client, vehicle_type, period, brand_codes, progress, progress_state)
+    if not dry_run:
+        return _sync_models(*args)
+
+    report = progress or (lambda message: None)
+    with transaction.atomic():
+        result = _sync_models(*args)
+        transaction.set_rollback(True)
+    report("--dry-run: nada foi gravado.")
+    return result
+
+
+def _sync_models(client, vehicle_type, period, brand_codes, progress, progress_state):
+    report = progress or (lambda message: None)
+    state = progress_state if progress_state is not None else CrawlProgress()
+
+    reference = resolve_reference_table(client, period)
+    report(f"Tabela de referência {reference} (código FIPE {reference.fipe_code})")
+
+    brands = parsers.parse_brands(client.brands(reference.fipe_code, vehicle_type))
+    if brand_codes:
+        wanted = {int(code) for code in brand_codes}
+        brands = [b for b in brands if b.fipe_code in wanted]
+
+    state.brands_total = len(brands)
+    state.brands_done = 0
+    result = ModelsSyncResult()
+
+    for brand_data in brands:
+        # update_or_create so a brand renamed by FIPE is corrected here too.
+        brand, _ = Brand.objects.update_or_create(
+            vehicle_type=vehicle_type,
+            fipe_code=brand_data.fipe_code,
+            defaults={"name": brand_data.name},
+        )
+        _sync_brand_models(client, reference, vehicle_type, brand, result, report, state)
+        state.brands_done += 1
+
+    report(
+        f"{result.models_created} modelos novos, {result.models_updated} atualizados; "
+        f"{result.years_created} anos/modelo novos, {result.years_updated} atualizados."
+    )
+    return result
+
+
+def _sync_brand_models(client, reference, vehicle_type, brand, result, report, state):
+    models = parsers.parse_models(
+        client.models(reference.fipe_code, vehicle_type, brand.fipe_code)
+    )
+    state.start_brand(brand.name, len(models))
+    report(f"  {brand.name}: {len(models)} modelos")
+
+    for model_data in models:
+        vehicle_model, created = VehicleModel.objects.update_or_create(
+            brand=brand,
+            fipe_code=model_data.fipe_code,
+            defaults={"name": model_data.name},
+        )
+        result.add_model(created)
+
+        years = parsers.parse_model_years(
+            client.model_years(
+                reference.fipe_code, vehicle_type, brand.fipe_code, vehicle_model.fipe_code
+            )
+        )
+        for year_data in years:
+            _, created = ModelYear.objects.update_or_create(
+                vehicle_model=vehicle_model,
+                fipe_year_code=year_data.fipe_year_code,
+                defaults={"year": year_data.year, "fuel_type": year_data.fuel_type},
+            )
+            result.add_year(created)
+        state.models_done += 1
 
 
 def sync(

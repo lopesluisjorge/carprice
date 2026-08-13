@@ -184,6 +184,77 @@ class SyncBrandsTests(TestCase):
         self.assertEqual(run.status, CrawlStatus.COMPLETED)
 
 
+class SyncModelsTests(TestCase):
+    def test_populates_models_and_years_without_prices(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+
+        self.assertEqual(VehicleModel.objects.count(), 2)
+        self.assertEqual(ModelYear.objects.count(), 3)
+        self.assertEqual(PriceQuote.objects.count(), 0)
+
+    def test_does_not_touch_the_price_endpoint(self):
+        client = FakeFipeClient()
+        sync.sync_models(client, brand_codes=[21])
+
+        self.assertEqual(client.count("models"), 1)
+        self.assertEqual(client.count("model_years"), 2)
+        self.assertEqual(client.count("price"), 0)
+
+    def test_does_not_create_a_crawl_run_or_checkpoints(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+
+        self.assertEqual(CrawlRun.objects.count(), 0)
+        self.assertEqual(CrawlCheckpoint.objects.count(), 0)
+
+    def test_reports_created_then_updated_counts(self):
+        first = sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        self.assertEqual((first.models_created, first.models_updated), (2, 0))
+        self.assertEqual((first.years_created, first.years_updated), (3, 0))
+
+        second = sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        self.assertEqual((second.models_created, second.models_updated), (0, 2))
+        self.assertEqual((second.years_created, second.years_updated), (0, 3))
+
+    def test_corrects_a_renamed_model(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        VehicleModel.objects.filter(fipe_code=4712).update(name="Palio errado")
+
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        self.assertEqual(VehicleModel.objects.get(fipe_code=4712).name, "Palio EX 1.0")
+
+    def test_walks_all_brands_by_default(self):
+        client = FakeFipeClient()
+        sync.sync_models(client)
+
+        self.assertEqual(Brand.objects.count(), 2)
+        # Both brands are asked for their models; only Fiat (21) returns any.
+        self.assertEqual(client.count("models"), 2)
+        self.assertEqual(VehicleModel.objects.count(), 2)
+
+    def test_dry_run_writes_nothing(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21], dry_run=True)
+
+        self.assertEqual(VehicleModel.objects.count(), 0)
+        self.assertEqual(ModelYear.objects.count(), 0)
+        self.assertEqual(Brand.objects.count(), 0)
+
+    def test_a_later_full_crawl_still_collects_prices(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        run = sync.sync(FakeFipeClient())
+
+        self.assertEqual(PriceQuote.objects.count(), 3)
+        self.assertEqual(run.status, CrawlStatus.COMPLETED)
+
+    def test_tracks_progress_state(self):
+        state = sync.CrawlProgress()
+        sync.sync_models(FakeFipeClient(), brand_codes=[21], progress_state=state)
+
+        self.assertEqual(state.brands_total, 1)
+        self.assertEqual(state.brands_done, 1)
+        self.assertEqual(state.models_total, 2)
+        self.assertEqual(state.models_done, 2)
+
+
 class ProgressTests(TestCase):
     def test_summary_is_explicit_before_anything_starts(self):
         self.assertEqual(sync.CrawlProgress().summary(), "sem progresso ainda")

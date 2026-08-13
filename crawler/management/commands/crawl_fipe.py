@@ -43,6 +43,14 @@ class Command(BaseCommand):
             help="Grava apenas o catálogo de marcas, sem modelos nem cotações.",
         )
         parser.add_argument(
+            "--models-only",
+            action="store_true",
+            help=(
+                "Atualiza modelos e anos/modelo (sem cotações). Aceita --brand; "
+                "sem ele, percorre todas as marcas."
+            ),
+        )
+        parser.add_argument(
             "--limit",
             type=int,
             help="Interrompe após N cotações. Útil para testar.",
@@ -86,6 +94,24 @@ class Command(BaseCommand):
                 f"  {message} — {progress.summary()}", self.style.WARNING
             ),
         )
+
+        if options["models_only"]:
+            conflicting = [
+                flag
+                for flag, value in (
+                    ("--brands-only", options["brands_only"]),
+                    ("--limit", options["limit"]),
+                    ("--resume", options["resume"]),
+                )
+                if value
+            ]
+            if conflicting:
+                raise CommandError(
+                    f"--models-only não pode ser combinado com {', '.join(conflicting)}"
+                )
+            return self._handle_models_only(
+                client, vehicle_type, period, options["brands"], options["dry_run"], progress
+            )
 
         if options["brands_only"]:
             conflicting = [
@@ -146,6 +172,28 @@ class Command(BaseCommand):
         stamp = timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")
         text = f"[{stamp}] {message}"
         self.stdout.write(style(text) if style else text)
+
+    def _handle_models_only(self, client, vehicle_type, period, brand_codes, dry_run, progress):
+        try:
+            result = sync.sync_models(
+                client,
+                vehicle_type=vehicle_type,
+                period=period,
+                brand_codes=brand_codes,
+                dry_run=dry_run,
+                progress=self.log,
+                progress_state=progress,
+            )
+        except (FipeError, ValueError) as exc:
+            raise CommandError(str(exc)) from exc
+
+        self.log(
+            self.style.SUCCESS(
+                f"{result.models_created} modelos novos, {result.models_updated} atualizados; "
+                f"{result.years_created} anos/modelo novos, {result.years_updated} atualizados."
+            )
+        )
+        self._report_requests(client)
 
     def _handle_brands_only(self, client, vehicle_type, period, dry_run):
         try:

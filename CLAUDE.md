@@ -84,6 +84,7 @@ Endpoints usados (`https://veiculos.fipe.org.br/api/veiculos/`): `ConsultarTabel
 ```bash
 python manage.py crawl_fipe                      # mês corrente, só carros
 python manage.py crawl_fipe --brands-only        # só o catálogo de marcas (2 requisições)
+python manage.py crawl_fipe --models-only --brand 21   # modelos e anos da marca, sem cotações
 python manage.py crawl_fipe --reference 2024-01  # backfill de um mês específico
 python manage.py crawl_fipe --brand 21 --limit 50
 python manage.py crawl_fipe --resume             # retoma o último CrawlRun incompleto
@@ -94,6 +95,14 @@ python manage.py crawl_fipe --dry-run
 `--brands-only` é uma atualização de catálogo, não uma coleta de preços: não cria `CrawlRun` nem
 checkpoints, de propósito — checkpoints ali fariam um `--resume` posterior pular marcas cujos
 preços nunca foram coletados. Por isso ele recusa `--brand`, `--limit` e `--resume`.
+
+`--models-only` desce um nível: atualiza modelos e anos/modelo das marcas indicadas (ou de todas,
+sem `--brand`), ainda **sem cotações**. Pela mesma razão do `--brands-only`, não cria `CrawlRun`
+nem checkpoints, e recusa `--brands-only`, `--limit` e `--resume`. Ao contrário do resto da
+varredura — que usa `get_or_create` e só preenche lacunas — ele usa `update_or_create` em modelo
+e ano/modelo: o objetivo é manter o catálogo fresco, então uma renomeação da FIPE é corrigida
+aqui e reindexada no FTS pelos triggers. É o passo para popular a busca de uma marca sem gastar a
+cota de cotações.
 
 Invariantes:
 
