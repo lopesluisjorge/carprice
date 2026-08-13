@@ -4,14 +4,25 @@ Everything the web app knows about vehicles goes through here — the views neve
 touch the FIPE API, only what the crawler has already stored.
 """
 
-from crawler.models import Brand
+from django.core.paginator import Paginator
+from django.db.models import Count
+from django.db.models import Max
+from django.db.models import Min
+from django.db.models import Prefetch
+
 from crawler.models import ModelYear
 from crawler.models import PriceQuote
+from crawler.models import ReferenceTable
 from crawler.models import VehicleModel
-from crawler.models import VehicleType
+from crawler.models import ZERO_KM_YEAR
+
+from web import codes
+from web import search
 
 # Windows offered on the detail and comparison screens, in months.
 VARIATION_WINDOWS = [3, 6, 12]
+
+PER_PAGE = 24
 
 
 def period(reference_table):
@@ -19,23 +30,90 @@ def period(reference_table):
     return reference_table.year * 12 + reference_table.month
 
 
-def brands(vehicle_type=VehicleType.CAR):
-    """Only brands with collected prices — the rest would open an empty select."""
-    return (
-        Brand.objects.filter(
-            vehicle_type=vehicle_type,
-            models__model_years__quotes__isnull=False,
+def latest_reference_table():
+    return ReferenceTable.objects.first()
+
+
+def available_fuels():
+    """The fuels present in the data, not a fixed list — an unnamed FIPE code
+    shows up as a bare number instead of disappearing from the filter."""
+    return sorted(ModelYear.objects.values_list("fuel_type", flat=True).distinct())
+
+
+def available_years():
+    years = ModelYear.objects.exclude(year=ZERO_KM_YEAR).values_list("year", flat=True)
+    return sorted(set(years), reverse=True)
+
+
+def search_models(filters):
+    """One page of cards, one card per VehicleModel."""
+    reference = latest_reference_table()
+    if reference is None:
+        return Paginator([], PER_PAGE).get_page(1)
+
+    model_years_qs = ModelYear.objects.all()
+    if filters.fuels:
+        model_years_qs = model_years_qs.filter(fuel_type__in=filters.fuels)
+    if filters.year is not None:
+        model_years_qs = model_years_qs.filter(**{filters.year_lookup: filters.year})
+
+    ranked_ids = search.search(filters.term)
+    if ranked_ids is not None:
+        model_years_qs = model_years_qs.filter(vehicle_model_id__in=ranked_ids)
+
+    rows = (
+        PriceQuote.objects.filter(reference_table=reference, model_year__in=model_years_qs)
+        .values("model_year__vehicle_model")
+        .annotate(
+            min_value=Min("value"),
+            max_value=Max("value"),
+            versions=Count("model_year", distinct=True),
         )
-        .distinct()
-        .order_by("name")
+        # PriceQuote.Meta.ordering would otherwise join the GROUP BY and split
+        # each model into one row per reference month.
+        .order_by()
     )
 
+    if ranked_ids is None:
+        rows = rows.order_by(
+            "model_year__vehicle_model__brand__name", "model_year__vehicle_model__name"
+        )
+        page = Paginator(rows, PER_PAGE).get_page(filters.page)
+    else:
+        position = {pk: index for index, pk in enumerate(ranked_ids)}
+        ordered = sorted(rows, key=lambda row: position[row["model_year__vehicle_model"]])
+        page = Paginator(ordered, PER_PAGE).get_page(filters.page)
 
-def vehicle_models(brand_id):
+    # Only the page's models are loaded, never the whole result.
+    ids = [row["model_year__vehicle_model"] for row in page]
+    models = VehicleModel.objects.select_related("brand").in_bulk(ids)
+    page.object_list = [
+        row
+        | {
+            "vehicle_model": models[row["model_year__vehicle_model"]],
+            "code": codes.encode_model(models[row["model_year__vehicle_model"]]),
+            "reference_table": reference,
+        }
+        for row in page
+    ]
+    return page
+
+
+def model_versions(vehicle_model):
+    """Every version of a model, newest first — the model page ignores the
+    search filters, so its URL always shows the same thing."""
+    reference = latest_reference_table()
     return (
-        VehicleModel.objects.filter(brand_id=brand_id, model_years__quotes__isnull=False)
-        .distinct()
-        .order_by("name")
+        ModelYear.objects.filter(vehicle_model=vehicle_model)
+        .select_related("vehicle_model__brand")
+        .prefetch_related(
+            Prefetch(
+                "quotes",
+                queryset=PriceQuote.objects.filter(reference_table=reference),
+                to_attr="current_quotes",
+            )
+        )
+        .order_by("-year", "fuel_type")
     )
 
 
