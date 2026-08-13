@@ -4,9 +4,11 @@ from django.shortcuts import render
 from django.utils.http import urlencode
 
 from crawler.models import FuelType
+from crawler.services import scheduling
 
 from web import codes
 from web import queries
+from web import search
 from web.filters import SearchFilters
 
 MAX_COMPARED = 4
@@ -44,6 +46,12 @@ def _search_context(filters):
 def home(request):
     filters = SearchFilters.from_query(request.GET)
     context = _search_context(filters)
+    # Only a term schedules work: tweaking the fuel or year filter must not
+    # queue thousands of FIPE requests. The whole match is scheduled, not just
+    # the visible page.
+    context["collection"] = scheduling.request_collection(
+        filters.term, search.search(filters.term) or []
+    )
     if request.headers.get("HX-Request"):
         return render(request, "web/partials/results.html", context)
     return render(request, "web/home.html", context)

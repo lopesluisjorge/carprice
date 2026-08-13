@@ -1,0 +1,12 @@
+{% if collection %}
+  <p class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+    {% if collection.status == "completed" %}
+      Histórico destes modelos coletado em {{ collection.finished_at|date:"d/m H:i" }}.
+    {% elif collection.status == "partial" %}
+      Coletando histórico — {{ collection.models_done }} de {{ collection.models_total }} modelos.
+    {% else %}
+      Coleta de histórico <strong>agendada</strong> para {{ collection.models_total }} modelo{{ collection.models_total|pluralize }}.
+      Roda quando o worker estiver ativo.
+    {% endif %}
+  </p>
+{% endif %}

@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.urls import NoReverseMatch
 from django.urls import reverse
 
+from crawler.models import CollectionRequest
 from crawler.models import FuelType
 
 from web import codes
@@ -127,3 +128,46 @@ class CompareTests(TestCase):
         response = self.client.get(reverse("web:compare"))
         self.assertNotContains(response, 'name="add"')
         self.assertContains(response, "Buscar veículos")
+
+
+class CollectionSchedulingTests(TestCase):
+    def setUp(self):
+        self.uno = build_vehicle(model_code=1, year=2015, fuel=FuelType.FLEX)
+        self.uno.vehicle_model.name = "Uno Mille Fire"
+        self.uno.vehicle_model.save()
+        add_quote(self.uno, 2026, 8, "40000.00")
+
+    def test_a_search_with_a_term_schedules_a_collection(self):
+        self.client.get(reverse("web:home"), {"q": "mille"})
+
+        request = CollectionRequest.objects.get()
+        self.assertEqual(request.term, "mille")
+        self.assertEqual(
+            list(request.items.values_list("vehicle_model_id", flat=True)),
+            [self.uno.vehicle_model.pk],
+        )
+
+    def test_a_search_without_a_term_schedules_nothing(self):
+        self.client.get(reverse("web:home"))
+        self.client.get(reverse("web:home"), {"fuel": "5"})
+
+        self.assertEqual(CollectionRequest.objects.count(), 0)
+
+    def test_a_repeated_search_does_not_schedule_again(self):
+        self.client.get(reverse("web:home"), {"q": "mille"})
+        self.client.get(reverse("web:home"), {"q": "mille"})
+
+        self.assertEqual(CollectionRequest.objects.count(), 1)
+
+    def test_the_banner_says_scheduled_not_collecting(self):
+        # The web app cannot know whether the worker is running; claiming it is
+        # would be a lie every time it is not.
+        response = self.client.get(reverse("web:home"), {"q": "mille"})
+
+        self.assertContains(response, "agendada")
+        self.assertNotContains(response, "Coletando agora")
+
+    def test_no_banner_without_a_collection(self):
+        # Not the bare word "histórico": the page tagline already carries it.
+        response = self.client.get(reverse("web:home"))
+        self.assertNotContains(response, "Coleta de histórico")
