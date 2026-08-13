@@ -12,6 +12,7 @@ from crawler.models import (
     PriceQuote,
     ReferenceTable,
     VehicleModel,
+    VehicleType,
 )
 from crawler.services import sync
 from crawler.tests.fake_client import FakeFipeClient
@@ -353,6 +354,39 @@ class ResumeTests(TestCase):
 
         sync.sync(FakeFipeClient())
         self.assertEqual(CrawlRun.objects.count(), 2)
+
+
+class UpsertQuoteTests(TestCase):
+    def setUp(self):
+        self.client_ = FakeFipeClient()
+        self.reference = sync.resolve_reference_table(self.client_)
+        self.brand = Brand.objects.create(fipe_code=21, name="Fiat")
+        self.model = VehicleModel.objects.create(
+            brand=self.brand, fipe_code=4828, name="Uno Mille 1.0"
+        )
+        self.version = ModelYear.objects.create(
+            vehicle_model=self.model, fipe_year_code="2013-1", year=2013, fuel_type=1
+        )
+
+    def outcome(self):
+        return sync.upsert_quote(
+            self.client_,
+            self.reference,
+            VehicleType.CAR,
+            self.brand,
+            self.model,
+            self.version,
+        )
+
+    def test_reports_created_then_updated(self):
+        self.assertEqual(self.outcome(), sync.QuoteOutcome.CREATED)
+        self.assertEqual(self.outcome(), sync.QuoteOutcome.UPDATED)
+        self.assertEqual(PriceQuote.objects.count(), 1)
+
+    def test_reports_missing_when_fipe_cannot_price_it(self):
+        self.client_ = FakeFipeClient(missing={"2013-1"})
+        self.assertEqual(self.outcome(), sync.QuoteOutcome.MISSING)
+        self.assertEqual(PriceQuote.objects.count(), 0)
 
 
 class ExplodingClient(FakeFipeClient):

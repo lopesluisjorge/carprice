@@ -9,6 +9,7 @@ Two guarantees the rest of the project relies on:
 """
 
 import dataclasses
+import enum
 import logging
 
 from django.db import transaction
@@ -408,7 +409,18 @@ def _walk_models(client, run, reference, vehicle_type, brand, limit, report, sta
         state.models_done += 1
 
 
-def _upsert_quote(client, run, reference, vehicle_type, brand, vehicle_model, model_year):
+class QuoteOutcome(enum.StrEnum):
+    CREATED = "created"
+    UPDATED = "updated"
+    MISSING = "missing"
+
+
+def upsert_quote(client, reference, vehicle_type, brand, vehicle_model, model_year):
+    """Fetch and store one quote. Returns which of the three things happened.
+
+    Counter-free so both callers can use it: the CrawlRun sweep and the
+    on-demand worker, which has no run to count into.
+    """
     try:
         payload = client.price(
             reference.fipe_code,
@@ -420,7 +432,7 @@ def _upsert_quote(client, run, reference, vehicle_type, brand, vehicle_model, mo
     except FipeNotFound:
         # FIPE lists year/fuel combinations it cannot price. Skipping is correct.
         logger.info("sem cotação para %s", model_year.fipe_year_code)
-        return
+        return QuoteOutcome.MISSING
 
     quote_data = parsers.parse_quote(payload)
     _, created = PriceQuote.objects.update_or_create(
@@ -432,7 +444,14 @@ def _upsert_quote(client, run, reference, vehicle_type, brand, vehicle_model, mo
             "fuel_type": quote_data.fuel_type,
         },
     )
-    if created:
+    return QuoteOutcome.CREATED if created else QuoteOutcome.UPDATED
+
+
+def _upsert_quote(client, run, reference, vehicle_type, brand, vehicle_model, model_year):
+    outcome = upsert_quote(
+        client, reference, vehicle_type, brand, vehicle_model, model_year
+    )
+    if outcome is QuoteOutcome.CREATED:
         run.quotes_created += 1
-    else:
+    elif outcome is QuoteOutcome.UPDATED:
         run.quotes_updated += 1
