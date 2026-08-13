@@ -216,3 +216,94 @@ class CrawlCheckpoint(models.Model):
 
     def __str__(self):
         return f"{self.crawl_run_id}/{self.brand}: {'ok' if self.done else 'pendente'}"
+
+
+class CollectionStatus(models.TextChoices):
+    PENDING = "pending", "Agendada"
+    RUNNING = "running", "Em andamento"
+    PARTIAL = "partial", "Parcial"
+    COMPLETED = "completed", "Concluída"
+    FAILED = "failed", "Falhou"
+
+
+class CollectionRequest(models.Model):
+    """One on-demand collection, scheduled by a search.
+
+    Holds no ReferenceTable foreign key on purpose: only FIPE knows which
+    monthly tables exist, and the worker resolves periods when it runs.
+    """
+
+    term = models.CharField("termo buscado", max_length=200)
+    vehicle_type = models.PositiveSmallIntegerField(
+        "tipo de veículo", choices=VehicleType.choices, default=VehicleType.CAR
+    )
+    status = models.CharField(
+        "situação",
+        max_length=12,
+        choices=CollectionStatus.choices,
+        default=CollectionStatus.PENDING,
+    )
+    vehicle_models = models.ManyToManyField(
+        VehicleModel,
+        through="CollectionItem",
+        related_name="collection_requests",
+        verbose_name="modelos",
+    )
+    created_at = models.DateTimeField("criada em", auto_now_add=True)
+    started_at = models.DateTimeField("iniciada em", null=True, blank=True)
+    finished_at = models.DateTimeField("finalizada em", null=True, blank=True)
+    models_done = models.PositiveIntegerField("modelos concluídos", default=0)
+    quotes_created = models.PositiveIntegerField("cotações criadas", default=0)
+    quotes_updated = models.PositiveIntegerField("cotações atualizadas", default=0)
+    quotes_missing = models.PositiveIntegerField("sem cotação na FIPE", default=0)
+    requests_spent = models.PositiveIntegerField("requisições gastas", default=0)
+    last_error = models.TextField("último erro", blank=True)
+
+    class Meta:
+        verbose_name = "coleta sob demanda"
+        verbose_name_plural = "coletas sob demanda"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.term} ({self.status})"
+
+    @property
+    def models_total(self):
+        # Not a stored counter: a redundant one could only drift from the rows.
+        return self.items.count()
+
+
+class CollectionItem(models.Model):
+    """One model inside a request. The through table of the M2M."""
+
+    request = models.ForeignKey(
+        CollectionRequest,
+        on_delete=models.CASCADE,
+        related_name="items",
+        verbose_name="coleta",
+    )
+    vehicle_model = models.ForeignKey(
+        VehicleModel, on_delete=models.CASCADE, verbose_name="modelo"
+    )
+    # Position in the full-text ranking: 0 is the most relevant.
+    rank = models.PositiveIntegerField("relevância", default=0)
+    status = models.CharField(
+        "situação",
+        max_length=12,
+        choices=CollectionStatus.choices,
+        default=CollectionStatus.PENDING,
+    )
+    finished_at = models.DateTimeField("finalizado em", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "item de coleta"
+        verbose_name_plural = "itens de coleta"
+        ordering = ["rank", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["request", "vehicle_model"], name="unique_model_per_collection"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.request_id}/{self.vehicle_model}: {self.status}"
