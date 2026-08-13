@@ -77,6 +77,8 @@ class ParseFuelTypeTests(SimpleTestCase):
             "2010 Diesel": 3,
             "2022 Elétrico": 4,
             "2026 Flex": 5,
+            "2026 Híbrido": 6,
+            "2016 Tetrafuel": 7,
         }
         for label, expected in cases.items():
             with self.subTest(label=label):

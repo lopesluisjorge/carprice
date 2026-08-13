@@ -23,6 +23,8 @@ class FuelType(models.IntegerChoices):
     DIESEL = 3, "Diesel"
     ELECTRIC = 4, "Elétrico"
     FLEX = 5, "Flex"
+    HYBRID = 6, "Híbrido"
+    TETRAFUEL = 7, "Tetrafuel"
 
 
 class ReferenceTable(models.Model):

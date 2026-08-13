@@ -4,3 +4,7 @@ venv
 .venv
 
 __pycache__
+
+# Tailwind standalone binary, downloaded per machine (see CLAUDE.md).
+# Glob because the release asset keeps its platform suffix: tailwindcss-linux-x64.
+/tailwindcss*

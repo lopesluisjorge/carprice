@@ -24,6 +24,10 @@ MONTHS = {
 }
 
 FUEL_BY_LABEL = {
+    # Most specific first: parse_fuel_type returns the first label contained in
+    # the text, and FIPE writes things like "Gasolina/Híbrido".
+    "tetrafuel": 7,
+    "hibrido": 6,
     "gasolina": 1,
     "alcool": 2,
     "etanol": 2,
