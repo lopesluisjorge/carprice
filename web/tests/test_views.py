@@ -1,89 +1,11 @@
-from decimal import Decimal
-
 from django.test import TestCase
 from django.urls import reverse
 
 from crawler.models import Brand
-from crawler.models import FuelType
-from crawler.models import ModelYear
-from crawler.models import PriceQuote
-from crawler.models import ReferenceTable
-from crawler.models import VehicleModel
 
 from web import codes
-from web import queries
-
-
-def build_vehicle(brand_code=21, model_code=4712, year=2017, fuel=FuelType.FLEX):
-    brand, _ = Brand.objects.get_or_create(fipe_code=brand_code, defaults={"name": "Fiat"})
-    vehicle_model, _ = VehicleModel.objects.get_or_create(
-        brand=brand, fipe_code=model_code, defaults={"name": "500 Cult 1.4"}
-    )
-    return ModelYear.objects.create(
-        vehicle_model=vehicle_model,
-        fipe_year_code=f"{year}-{int(fuel)}",
-        year=year,
-        fuel_type=fuel,
-    )
-
-
-def add_quote(model_year, year, month, value):
-    reference_table, _ = ReferenceTable.objects.get_or_create(
-        year=year, month=month, defaults={"fipe_code": year * 100 + month}
-    )
-    return PriceQuote.objects.create(
-        model_year=model_year,
-        reference_table=reference_table,
-        value=Decimal(value),
-        fipe_code="001124-0",
-        fuel_type=model_year.fuel_type,
-    )
-
-
-class CodeTests(TestCase):
-    def test_round_trip(self):
-        model_year = build_vehicle()
-        code = codes.encode(model_year)
-        self.assertEqual(code, "1-21-4712-2017-5")
-        self.assertEqual(codes.get(code), model_year)
-
-    def test_malformed_codes_resolve_to_nothing(self):
-        for code in ["", "abc", "1-21-4712", "1-21-4712-2017-5-9", "1-21-4712-2017-x"]:
-            with self.subTest(code=code):
-                self.assertIsNone(codes.get(code))
-
-    def test_parse_list_drops_repeats_and_respects_the_limit(self):
-        self.assertEqual(codes.parse_list("a, b ,a,c,d", limit=3), ["a", "b", "c"])
-
-
-class VariationTests(TestCase):
-    def test_uses_the_closest_month_at_or_before_the_target(self):
-        model_year = build_vehicle()
-        add_quote(model_year, 2025, 8, "100000.00")
-        add_quote(model_year, 2026, 2, "90000.00")  # 6 months back
-        add_quote(model_year, 2026, 8, "99000.00")
-        quotes = queries.history(model_year)
-
-        six = queries.variation(quotes, 6)
-        self.assertEqual(six["previous_value"], Decimal("90000.00"))
-        self.assertEqual(six["delta"], Decimal("9000.00"))
-        self.assertAlmostEqual(six["percent"], 10.0)
-
-        # No month exactly 3 back, so it falls back to the older one and says so.
-        three = queries.variation(quotes, 3)
-        self.assertEqual(three["reference_table"].month, 2)
-
-    def test_no_older_quote_gives_no_variation(self):
-        model_year = build_vehicle()
-        add_quote(model_year, 2026, 8, "99000.00")
-        self.assertIsNone(queries.variation(queries.history(model_year), 3))
-
-    def test_windows_keep_their_label_when_empty(self):
-        model_year = build_vehicle()
-        add_quote(model_year, 2026, 8, "99000.00")
-        variations = queries.variations(queries.history(model_year))
-        self.assertEqual([entry["months"] for entry in variations], [3, 6, 12])
-        self.assertNotIn("percent", variations[0])
+from web.tests.factories import add_quote
+from web.tests.factories import build_vehicle
 
 
 class SearchTests(TestCase):

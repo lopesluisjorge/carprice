@@ -12,9 +12,11 @@ cars and another for motorcycles.
 """
 
 from crawler.models import ModelYear
+from crawler.models import VehicleModel
 
 SEPARATOR = "-"
 PARTS = 5
+MODEL_PARTS = 3
 
 
 def encode(model_year):
@@ -49,6 +51,34 @@ def get(code):
     if filters is None:
         return None
     return ModelYear.objects.select_related("vehicle_model__brand").filter(**filters).first()
+
+
+def encode_model(vehicle_model):
+    brand = vehicle_model.brand
+    return SEPARATOR.join(
+        [str(brand.vehicle_type), str(brand.fipe_code), str(vehicle_model.fipe_code)]
+    )
+
+
+def decode_model(code):
+    """Same discipline as the version code, three parts instead of five."""
+    parts = code.strip().split(SEPARATOR)
+    if len(parts) != MODEL_PARTS or not all(part.isdigit() for part in parts):
+        return None
+    vehicle_type, brand, model = parts
+    return {
+        "brand__vehicle_type": int(vehicle_type),
+        "brand__fipe_code": int(brand),
+        "fipe_code": int(model),
+    }
+
+
+def get_model(code):
+    """The VehicleModel a code points to, or None."""
+    filters = decode_model(code)
+    if filters is None:
+        return None
+    return VehicleModel.objects.select_related("brand").filter(**filters).first()
 
 
 def parse_list(raw, limit):
