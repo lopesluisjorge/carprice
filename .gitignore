@@ -5,6 +5,9 @@ venv
 
 __pycache__
 
+# Lock do worker da fila de coleta.
+/.crawl_queue.lock
+
 # Tailwind standalone binary, downloaded per machine (see CLAUDE.md).
 # Glob because the release asset keeps its platform suffix: tailwindcss-linux-x64.
 /tailwindcss*

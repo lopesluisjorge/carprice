@@ -1,4 +1,6 @@
+import tempfile
 from datetime import date
+from pathlib import Path
 
 from django.test import TestCase
 
@@ -11,6 +13,7 @@ from crawler.models import ReferenceTable
 from crawler.models import VehicleModel
 from crawler.services import collecting
 from crawler.services import scheduling
+from crawler.services.collecting import queue_lock
 from crawler.tests.fake_client import FakeFipeClient
 
 # Pinned to the fixture's newest reference table. The periods a version needs
@@ -116,3 +119,34 @@ class ProcessRequestTests(TestCase):
         self.assertGreater(request.quotes_missing, 0)
         self.assertEqual(request.quotes_created, 0)
         self.assertEqual(request.status, CollectionStatus.COMPLETED)
+
+
+class LockTests(TestCase):
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "queue.lock"
+
+    def test_a_second_holder_is_refused(self):
+        with queue_lock(self.path):
+            with self.assertRaises(collecting.QueueBusy):
+                with queue_lock(self.path):
+                    pass
+
+    def test_the_lock_is_released_on_exit(self):
+        with queue_lock(self.path):
+            pass
+        with queue_lock(self.path):
+            pass  # must not raise
+
+
+class ReclaimTests(TestCase):
+    def test_a_request_left_running_is_reclaimed(self):
+        request = scheduling.request_collection("teste", [build_model().pk])
+        CollectionRequest.objects.filter(pk=request.pk).update(
+            status=CollectionStatus.RUNNING
+        )
+
+        collecting.reclaim_stale_requests()
+
+        request.refresh_from_db()
+        self.assertEqual(request.status, CollectionStatus.PARTIAL)
+        self.assertIn(request, collecting.pending_requests())

@@ -5,6 +5,8 @@ requests. Everything here assumes a single process: the quota is a sliding
 window inside one FipeClient, and a second worker would silently double it.
 """
 
+import contextlib
+import fcntl
 import logging
 
 from django.utils import timezone
@@ -18,6 +20,33 @@ from crawler.services import sync
 logger = logging.getLogger(__name__)
 
 DEFAULT_BUDGET = 1500
+
+
+class QueueBusy(Exception):
+    """Another worker holds the queue lock."""
+
+
+@contextlib.contextmanager
+def queue_lock(path):
+    """Hold an exclusive, non-blocking lock on `path`.
+
+    A file lock rather than a database row because the OS releases it when the
+    process dies, which is exactly the failure this must survive. It guards a
+    single machine, not a cluster — the quota lives in one process's memory
+    anyway.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        handle.close()
+        raise QueueBusy(f"outro worker já detém {path}") from exc
+    try:
+        yield
+    finally:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
 
 
 def pending_requests():
