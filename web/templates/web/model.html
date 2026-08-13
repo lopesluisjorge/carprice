@@ -1,0 +1,47 @@
+{% extends "web/base.html" %}
+{% load formatting %}
+
+{% block title %}{{ vehicle_model.name }}{% endblock %}
+
+{% block content %}
+  <a href="{% url 'web:home' %}{% if back_to_search %}?{{ back_to_search }}{% endif %}"
+     class="text-sm font-medium text-slate-500 hover:text-slate-900">← voltar à busca</a>
+
+  <p class="mt-4 text-sm font-medium text-blue-600">{{ vehicle_model.brand.name }}</p>
+  <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+    {{ vehicle_model.name }}
+  </h1>
+  <p class="mt-2 text-sm text-slate-500">
+    {{ versions|length }} versã{{ versions|length|pluralize:"o,es" }}{% if reference_table %} · referência {{ reference_table }}{% endif %}
+  </p>
+
+  <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <table class="w-full text-sm">
+      <thead class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="p-4">Ano</th>
+          <th class="p-4">Combustível</th>
+          <th class="p-4">Preço</th>
+          <th class="p-4"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for version in versions %}
+          <tr class="border-b border-slate-100 last:border-0">
+            <td class="p-4 font-medium text-slate-900">{{ version|model_year_label }}</td>
+            <td class="p-4 text-slate-600">{{ version.get_fuel_type_display }}</td>
+            <td class="p-4 font-semibold text-slate-900">
+              {% for quote in version.current_quotes %}{{ quote.value|brl }}{% empty %}—{% endfor %}
+            </td>
+            <td class="p-4 text-right whitespace-nowrap">
+              <a href="{% url 'web:detail' %}?v={{ version|code }}"
+                 class="font-medium text-blue-600 hover:underline">histórico</a>
+              <a href="{% url 'web:compare' %}?v={{ version|code }}"
+                 class="ml-3 font-medium text-slate-500 hover:text-slate-900">+ comparar</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

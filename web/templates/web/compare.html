@@ -10,13 +10,16 @@
     pode ser copiado e compartilhado.
   </p>
 
-  {% if not is_full %}
-    <div class="mt-8">
-      {% include "web/partials/search_form.html" with action="web:compare" field="add" submit_label="Adicionar ao comparativo" %}
-    </div>
-  {% else %}
+  {% if is_full %}
     <p class="mt-8 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
       Limite de {{ max_compared }} versões atingido. Remova uma para incluir outra.
+    </p>
+  {% else %}
+    <p class="mt-8">
+      <a href="{% url 'web:home' %}{% if selection_query %}?{{ selection_query }}{% endif %}"
+         class="inline-block rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+        Buscar veículos
+      </a>
     </p>
   {% endif %}
 

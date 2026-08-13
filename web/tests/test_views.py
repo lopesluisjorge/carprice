@@ -1,46 +1,50 @@
 from django.test import TestCase
+from django.urls import NoReverseMatch
 from django.urls import reverse
 
-from crawler.models import Brand
+from crawler.models import FuelType
 
 from web import codes
 from web.tests.factories import add_quote
 from web.tests.factories import build_vehicle
 
 
-class SearchTests(TestCase):
+class SearchScreenTests(TestCase):
     def setUp(self):
-        self.model_year = build_vehicle()
-        add_quote(self.model_year, 2026, 8, "99000.00")
+        self.uno = build_vehicle(model_code=1, year=2015, fuel=FuelType.FLEX)
+        self.uno.vehicle_model.name = "Uno Mille Fire"
+        self.uno.vehicle_model.save()
+        add_quote(self.uno, 2026, 8, "40000.00")
 
-    def test_home_lists_only_brands_with_quotes(self):
-        Brand.objects.create(fipe_code=99, name="Sem coleta")
+    def test_lists_every_model_without_a_term(self):
         response = self.client.get(reverse("web:home"))
-        self.assertContains(response, "Fiat")
-        self.assertNotContains(response, "Sem coleta")
+        self.assertContains(response, "Uno Mille Fire")
+        self.assertContains(response, "R$ 40.000,00")
 
-    def test_model_fragment_carries_the_target_field(self):
-        brand = self.model_year.vehicle_model.brand
-        response = self.client.get(
-            reverse("web:model_options"), {"brand": brand.pk, "field": "add"}
-        )
-        self.assertContains(response, "500 Cult 1.4")
-        self.assertContains(response, "field=add")
+    def test_finds_by_term(self):
+        self.assertContains(self.client.get(reverse("web:home"), {"q": "mille"}), "Uno Mille")
 
-    def test_year_fragment_offers_the_shareable_code(self):
-        response = self.client.get(
-            reverse("web:year_options"),
-            {"model": self.model_year.vehicle_model.pk, "field": "add"},
-        )
-        self.assertContains(response, 'name="add"')
-        self.assertContains(response, "1-21-4712-2017-5")
+    def test_term_without_matches_shows_the_empty_state(self):
+        response = self.client.get(reverse("web:home"), {"q": "lamborghini"})
+        self.assertContains(response, "Nenhum modelo encontrado")
 
-    def test_unknown_field_falls_back_to_the_search(self):
+    def test_filters_survive_in_the_links(self):
+        response = self.client.get(reverse("web:home"), {"q": "mille", "fuel": "5"})
+        self.assertEqual(response.context["filters"].fuels, (5,))
+        self.assertContains(response, 'value="mille"')
+
+    def test_htmx_request_returns_only_the_results(self):
         response = self.client.get(
-            reverse("web:year_options"),
-            {"model": self.model_year.vehicle_model.pk, "field": "evil\" onload=x"},
+            reverse("web:home"), {"q": "mille"}, headers={"hx-request": "true"}
         )
-        self.assertContains(response, 'name="v"')
+        self.assertContains(response, "Uno Mille")
+        self.assertNotContains(response, "<html")
+
+    def test_cascade_endpoints_are_gone(self):
+        for name in ["web:model_options", "web:year_options"]:
+            with self.subTest(name=name):
+                with self.assertRaises(NoReverseMatch):
+                    reverse(name)
 
 
 class DetailTests(TestCase):
@@ -110,3 +114,8 @@ class CompareTests(TestCase):
     def test_empty_selection_renders(self):
         response = self.client.get(reverse("web:compare"))
         self.assertContains(response, "Nenhuma versão selecionada")
+
+    def test_no_longer_carries_a_picker_of_its_own(self):
+        response = self.client.get(reverse("web:compare"))
+        self.assertNotContains(response, 'name="add"')
+        self.assertContains(response, "Buscar veículos")

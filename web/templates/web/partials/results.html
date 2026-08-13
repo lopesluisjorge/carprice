@@ -1,0 +1,33 @@
+{% if page.object_list %}
+  <p class="mb-4 text-sm text-slate-500">
+    {{ page.paginator.count }} modelo{{ page.paginator.count|pluralize }} encontrado{{ page.paginator.count|pluralize }}
+  </p>
+  <div class="grid gap-4 sm:grid-cols-2">
+    {% for card in page %}{% include "web/partials/model_card.html" %}{% endfor %}
+  </div>
+  {% if page.has_other_pages %}
+    <nav class="mt-6 flex items-center justify-between text-sm">
+      {% if previous_url %}
+        <a href="?{{ previous_url }}" class="font-medium text-blue-600 hover:underline">← anteriores</a>
+      {% else %}<span></span>{% endif %}
+      <span class="text-slate-500">página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+      {% if next_url %}
+        <a href="?{{ next_url }}" class="font-medium text-blue-600 hover:underline">próximos →</a>
+      {% else %}<span></span>{% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <div class="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-12 text-center">
+    <p class="font-medium text-slate-700">Nenhum modelo encontrado</p>
+    <p class="mt-1 text-sm text-slate-500">
+      {% if filters.is_empty %}
+        O banco ainda não tem cotações. Rode <code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">python manage.py crawl_fipe</code>.
+      {% else %}
+        Tente outro termo ou afrouxe os filtros.
+      {% endif %}
+    </p>
+    {% if not filters.is_empty %}
+      <a href="{% url 'web:home' %}" class="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">limpar filtros</a>
+    {% endif %}
+  </div>
+{% endif %}

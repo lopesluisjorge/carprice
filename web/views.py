@@ -1,60 +1,71 @@
 """Screens over the collected FIPE data. Nothing here talks to the FIPE API."""
 
 from django.shortcuts import render
+from django.utils.http import urlencode
 
-from crawler.models import ReferenceTable
+from crawler.models import FuelType
 
 from web import codes
 from web import queries
+from web.filters import SearchFilters
 
 MAX_COMPARED = 4
 
-# The year select posts under a different name on each screen; the cascade
-# fragments echo it back, so only these two are accepted.
-FIELD_NAMES = {"v", "add"}
+YEAR_OPS = [("gte", "a partir de"), ("eq", "exatamente"), ("lte", "até")]
+FUEL_LABELS = dict(FuelType.choices)
 
 
-def _base_context():
-    return {"brands": queries.brands(), "reference_table": ReferenceTable.objects.first()}
+def _search_context(filters):
+    """Everything the search screen needs.
 
-
-def _int(value):
-    """Query params reach the selects as text and may be empty or hand-edited."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _field(request):
-    name = request.GET.get("field", "v")
-    return name if name in FIELD_NAMES else "v"
+    Also used by the screens that fall back to the search when the code in the
+    URL does not resolve.
+    """
+    page = queries.search_models(filters)
+    return {
+        "filters": filters,
+        "page": page,
+        "fuels": [
+            (code, FUEL_LABELS.get(code, f"Combustível {code}"))
+            for code in queries.available_fuels()
+        ],
+        "years": queries.available_years(),
+        "year_ops": YEAR_OPS,
+        "previous_url": (
+            filters.querystring(page=page.previous_page_number()) if page.has_previous() else ""
+        ),
+        "next_url": (
+            filters.querystring(page=page.next_page_number()) if page.has_next() else ""
+        ),
+        "reference_table": queries.latest_reference_table(),
+    }
 
 
 def home(request):
-    return render(request, "web/home.html", _base_context())
+    filters = SearchFilters.from_query(request.GET)
+    context = _search_context(filters)
+    if request.headers.get("HX-Request"):
+        return render(request, "web/partials/results.html", context)
+    return render(request, "web/home.html", context)
 
 
-def model_options(request):
-    """HTMX fragment: the model select for a brand, plus an emptied year select."""
+def model_detail(request):
+    vehicle_model = codes.get_model(request.GET.get("m", ""))
+    if vehicle_model is None:
+        return render(
+            request,
+            "web/home.html",
+            _search_context(SearchFilters()) | {"message": "Modelo não encontrado."},
+            status=404,
+        )
     return render(
         request,
-        "web/partials/cascade_tail.html",
+        "web/model.html",
         {
-            "vehicle_models": queries.vehicle_models(_int(request.GET.get("brand"))),
-            "field": _field(request),
-        },
-    )
-
-
-def year_options(request):
-    """HTMX fragment: the year select for a model."""
-    return render(
-        request,
-        "web/partials/year_select.html",
-        {
-            "model_years": queries.model_years(_int(request.GET.get("model"))),
-            "field": _field(request),
+            "vehicle_model": vehicle_model,
+            "versions": queries.model_versions(vehicle_model),
+            "reference_table": queries.latest_reference_table(),
+            "back_to_search": request.GET.get("from", ""),
         },
     )
 
@@ -62,13 +73,17 @@ def year_options(request):
 def detail(request):
     code = request.GET.get("v", "")
     model_year = codes.get(code)
-    context = _base_context()
     if model_year is None:
-        context["message"] = "Veículo não encontrado. Refaça a busca."
-        return render(request, "web/home.html", context, status=404)
+        return render(
+            request,
+            "web/home.html",
+            _search_context(SearchFilters()) | {"message": "Veículo não encontrado."},
+            status=404,
+        )
 
     summary = queries.summarize(model_year)
-    context |= {
+    context = {
+        "reference_table": queries.latest_reference_table(),
         "code": code,
         "summary": summary,
         "chart_series": [queries.chart_series(summary)],
@@ -96,10 +111,11 @@ def compare(request):
         # What the querystring becomes when this card's "remover" is clicked.
         summary["without_me"] = ",".join(code for code in kept if code != summary["code"])
 
-    context = _base_context()
-    context |= {
+    context = {
+        "reference_table": queries.latest_reference_table(),
         "summaries": summaries,
         "selection": ",".join(kept),
+        "selection_query": urlencode({"v": ",".join(kept)}) if kept else "",
         "is_full": len(kept) >= MAX_COMPARED,
         "max_compared": MAX_COMPARED,
         # Transposed here because the table reads one window per row, across

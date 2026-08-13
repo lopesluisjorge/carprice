@@ -1,33 +1,63 @@
 {% extends "web/base.html" %}
 
-{% block title %}Consultar{% endblock %}
+{% block title %}Buscar{% endblock %}
 
 {% block content %}
-  <div class="mx-auto max-w-2xl">
-    <h1 class="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-      Quanto vale o seu carro?
-    </h1>
-    <p class="mt-3 text-slate-600">
-      Preço da Tabela FIPE com o histórico dos meses já coletados — o site oficial mostra
-      apenas o mês vigente.
-    </p>
+  <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Buscar veículo</h1>
+  <p class="mt-2 text-slate-600">
+    Digite o modelo. O preço vem da Tabela FIPE, com o histórico já coletado.
+  </p>
 
-    <div class="mt-8">
-      {% include "web/partials/search_form.html" with action="web:detail" field="v" submit_label="Consultar preço" %}
+  <form action="{% url 'web:home' %}" method="get"
+        hx-get="{% url 'web:home' %}" hx-target="#results" hx-swap="innerHTML"
+        hx-push-url="true" hx-trigger="submit, change from:#filters"
+        class="mt-6">
+    <div class="flex gap-2">
+      <input type="search" name="q" value="{{ filters.term }}" placeholder="corsa, uno mille, siena…"
+             class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30">
+      <button type="submit"
+              class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+        Buscar
+      </button>
     </div>
 
-    {% if brands %}
-      <p class="mt-4 text-xs text-slate-500">
-        Aparecem apenas as marcas já coletadas pelo crawler.
-      </p>
-    {% else %}
-      <p class="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-        Nenhum preço coletado ainda. Rode <code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">python manage.py crawl_fipe</code> para popular o banco.
-      </p>
-    {% endif %}
+    <div class="mt-6 grid gap-8 lg:grid-cols-[15rem_1fr]">
+      <aside id="filters" class="space-y-6">
+        <fieldset>
+          <legend class="text-sm font-medium text-slate-700">Combustível</legend>
+          <div class="mt-2 space-y-1.5">
+            {% for code, label in fuels %}
+              <label class="flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" name="fuel" value="{{ code }}"
+                       {% if code in filters.fuels %}checked{% endif %}
+                       class="rounded border-slate-300 text-blue-600 focus:ring-blue-500/30">
+                {{ label }}
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
 
-    <p class="mt-8 text-sm text-slate-500">
-      Quer ver lado a lado? <a href="{% url 'web:compare' %}" class="font-medium text-blue-600 hover:underline">Compare até 4 versões</a>.
-    </p>
-  </div>
+        <fieldset>
+          <legend class="text-sm font-medium text-slate-700">Ano</legend>
+          <div class="mt-2 flex gap-2">
+            <select name="year_op"
+                    class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+              {% for value, label in year_ops %}
+                <option value="{{ value }}" {% if filters.year_op == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <select name="year"
+                    class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+              <option value="">qualquer</option>
+              {% for year in years %}
+                <option value="{{ year }}" {% if filters.year == year %}selected{% endif %}>{{ year }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </fieldset>
+      </aside>
+
+      <div id="results">{% include "web/partials/results.html" %}</div>
+    </div>
+  </form>
 {% endblock %}
