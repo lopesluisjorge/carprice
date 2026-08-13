@@ -180,6 +180,7 @@ class ModelsSyncResult:
 
     models_created: int = 0
     models_updated: int = 0
+    models_skipped: int = 0
     years_created: int = 0
     years_updated: int = 0
 
@@ -204,18 +205,33 @@ def sync_models(
     dry_run=False,
     progress=None,
     progress_state=None,
+    refresh_existing=False,
 ):
     """Refresh the catalogue down to model years, without collecting prices.
 
     Like ``sync_brands`` and for the same reason, this is a catalogue refresh,
     not a price crawl: it creates no CrawlRun and no checkpoints, so a later
     ``--resume`` is not misled into skipping brands whose prices were never
-    collected. ``update_or_create`` keeps names current — correcting a FIPE
-    rename and, through the FTS triggers, reindexing the model.
+    collected.
+
+    By default a model that is already stored *with its years* is skipped
+    without spending a request, which is what makes an interrupted sweep cheap
+    to resume — the cost here is one request per model, and a big brand runs to
+    hundreds. ``refresh_existing`` asks for every model again, restoring the
+    ``update_or_create`` pass that corrects a FIPE rename and, through the FTS
+    triggers, reindexes it.
 
     Returns a ``ModelsSyncResult``.
     """
-    args = (client, vehicle_type, period, brand_codes, progress, progress_state)
+    args = (
+        client,
+        vehicle_type,
+        period,
+        brand_codes,
+        progress,
+        progress_state,
+        refresh_existing,
+    )
     if not dry_run:
         return _sync_models(*args)
 
@@ -227,7 +243,9 @@ def sync_models(
     return result
 
 
-def _sync_models(client, vehicle_type, period, brand_codes, progress, progress_state):
+def _sync_models(
+    client, vehicle_type, period, brand_codes, progress, progress_state, refresh_existing
+):
     report = progress or (lambda message: None)
     state = progress_state if progress_state is not None else CrawlProgress()
 
@@ -250,24 +268,54 @@ def _sync_models(client, vehicle_type, period, brand_codes, progress, progress_s
             fipe_code=brand_data.fipe_code,
             defaults={"name": brand_data.name},
         )
-        _sync_brand_models(client, reference, vehicle_type, brand, result, report, state)
+        _sync_brand_models(
+            client, reference, vehicle_type, brand, result, report, state, refresh_existing
+        )
         state.brands_done += 1
 
     report(
-        f"{result.models_created} modelos novos, {result.models_updated} atualizados; "
+        f"{result.models_created} modelos novos, {result.models_updated} atualizados, "
+        f"{result.models_skipped} já salvos (pulados); "
         f"{result.years_created} anos/modelo novos, {result.years_updated} atualizados."
     )
     return result
 
 
-def _sync_brand_models(client, reference, vehicle_type, brand, result, report, state):
+def _stored_model_codes(brand):
+    """FIPE codes of this brand's models that already have their years.
+
+    Having a row is not enough: an interrupted sweep can leave a model saved
+    with no years at all, and treating that as done would strand it forever.
+    """
+    return set(
+        VehicleModel.objects.filter(brand=brand, model_years__isnull=False)
+        # Empty order_by is mandatory: VehicleModel.Meta.ordering would drag
+        # `name` into the SELECT and make DISTINCT apply to the pair instead.
+        .order_by()
+        .values_list("fipe_code", flat=True)
+        .distinct()
+    )
+
+
+def _sync_brand_models(
+    client, reference, vehicle_type, brand, result, report, state, refresh_existing
+):
     models = parsers.parse_models(
         client.models(reference.fipe_code, vehicle_type, brand.fipe_code)
     )
     state.start_brand(brand.name, len(models))
     report(f"  {brand.name}: {len(models)} modelos")
 
+    stored = set() if refresh_existing else _stored_model_codes(brand)
+    if stored:
+        report(f"  {brand.name}: {len(stored)} já salvos, serão pulados")
+
     for model_data in models:
+        if model_data.fipe_code in stored:
+            result.models_skipped += 1
+            state.models_done += 1
+            continue
+
         vehicle_model, created = VehicleModel.objects.update_or_create(
             brand=brand,
             fipe_code=model_data.fipe_code,

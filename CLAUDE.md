@@ -85,6 +85,7 @@ Endpoints usados (`https://veiculos.fipe.org.br/api/veiculos/`): `ConsultarTabel
 python manage.py crawl_fipe                      # mês corrente, só carros
 python manage.py crawl_fipe --brands-only        # só o catálogo de marcas (2 requisições)
 python manage.py crawl_fipe --models-only --brand 21   # modelos e anos da marca, sem cotações
+python manage.py crawl_fipe --models-only --brand 21 --refresh-existing  # reprocessa os já salvos
 python manage.py crawl_fipe --reference 2024-01  # backfill de um mês específico
 python manage.py crawl_fipe --brand 21 --limit 50
 python manage.py crawl_fipe --resume             # retoma o último CrawlRun incompleto
@@ -98,11 +99,25 @@ preços nunca foram coletados. Por isso ele recusa `--brand`, `--limit` e `--res
 
 `--models-only` desce um nível: atualiza modelos e anos/modelo das marcas indicadas (ou de todas,
 sem `--brand`), ainda **sem cotações**. Pela mesma razão do `--brands-only`, não cria `CrawlRun`
-nem checkpoints, e recusa `--brands-only`, `--limit` e `--resume`. Ao contrário do resto da
-varredura — que usa `get_or_create` e só preenche lacunas — ele usa `update_or_create` em modelo
-e ano/modelo: o objetivo é manter o catálogo fresco, então uma renomeação da FIPE é corrigida
-aqui e reindexada no FTS pelos triggers. É o passo para popular a busca de uma marca sem gastar a
-cota de cotações.
+nem checkpoints, e recusa `--brands-only`, `--limit` e `--resume`. É o passo para popular a busca
+de uma marca sem gastar a cota de cotações.
+
+**Por padrão ele pula os modelos que já estão salvos**, sem gastar requisição. O custo aqui é de
+uma requisição por modelo (`ConsultarAnoModelo`), e uma marca grande passa de 500 — a Chevrolet
+tem 556, ou ~14 minutos a 40 req/min. Sem o pulo, retomar uma varredura interrompida pagava tudo
+de novo desde o começo, em ordem alfabética, e um modelo lá no fim da lista nunca chegava a ser
+salvo.
+
+"Já salvo" é **modelo que tem anos/modelo**, não modelo que tem linha: uma varredura interrompida
+pode deixar a linha do modelo sem nenhum ano, e tratar isso como pronto abandonaria o modelo para
+sempre. `_stored_model_codes` é quem decide, e ela carrega o `.order_by()` vazio obrigatório —
+sem ele o `Meta.ordering` do `VehicleModel` arrastaria `name` para o `SELECT` e o `DISTINCT`
+passaria a valer para o par.
+
+`--refresh-existing` desliga o pulo e reprocessa tudo. É o que restaura o `update_or_create` em
+modelo e ano/modelo — ou seja, **uma renomeação da FIPE só é corrigida (e reindexada no FTS pelos
+triggers) com essa flag**. Esse é o preço consciente do padrão: varredura barata de retomar, ao
+custo de não reparar nomes sozinha. A flag é recusada sem `--models-only`, onde não faria nada.
 
 Invariantes:
 

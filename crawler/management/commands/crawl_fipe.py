@@ -51,6 +51,14 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--refresh-existing",
+            action="store_true",
+            help=(
+                "Com --models-only, reprocessa também os modelos já salvos. Sem ele, "
+                "modelos que já têm anos/modelo são pulados sem gastar requisição."
+            ),
+        )
+        parser.add_argument(
             "--limit",
             type=int,
             help="Interrompe após N cotações. Útil para testar.",
@@ -111,8 +119,17 @@ class Command(BaseCommand):
                     f"--models-only não pode ser combinado com {', '.join(conflicting)}"
                 )
             return self._handle_models_only(
-                client, vehicle_type, period, options["brands"], options["dry_run"], progress
+                client,
+                vehicle_type,
+                period,
+                options["brands"],
+                options["dry_run"],
+                progress,
+                options["refresh_existing"],
             )
+
+        if options["refresh_existing"]:
+            raise CommandError("--refresh-existing só vale com --models-only")
 
         if options["brands_only"]:
             conflicting = [
@@ -174,7 +191,9 @@ class Command(BaseCommand):
         text = f"[{stamp}] {message}"
         self.stdout.write(style(text) if style else text)
 
-    def _handle_models_only(self, client, vehicle_type, period, brand_codes, dry_run, progress):
+    def _handle_models_only(
+        self, client, vehicle_type, period, brand_codes, dry_run, progress, refresh_existing
+    ):
         try:
             result = sync.sync_models(
                 client,
@@ -184,13 +203,15 @@ class Command(BaseCommand):
                 dry_run=dry_run,
                 progress=self.log,
                 progress_state=progress,
+                refresh_existing=refresh_existing,
             )
         except (FipeError, ValueError) as exc:
             raise CommandError(str(exc)) from exc
 
         self.log(
             self.style.SUCCESS(
-                f"{result.models_created} modelos novos, {result.models_updated} atualizados; "
+                f"{result.models_created} modelos novos, {result.models_updated} atualizados, "
+                f"{result.models_skipped} já salvos (pulados); "
                 f"{result.years_created} anos/modelo novos, {result.years_updated} atualizados."
             )
         )

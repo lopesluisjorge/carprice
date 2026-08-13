@@ -17,3 +17,8 @@ class ModelsOnlyValidationTests(SimpleTestCase):
     def test_rejects_brands_only(self):
         with self.assertRaisesMessage(CommandError, "--brands-only"):
             call_command("crawl_fipe", "--models-only", "--brands-only")
+
+    def test_refresh_existing_needs_models_only(self):
+        # Alone it would silently do nothing, which is worse than refusing.
+        with self.assertRaisesMessage(CommandError, "--refresh-existing"):
+            call_command("crawl_fipe", "--refresh-existing")

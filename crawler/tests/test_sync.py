@@ -212,16 +212,61 @@ class SyncModelsTests(TestCase):
         self.assertEqual((first.models_created, first.models_updated), (2, 0))
         self.assertEqual((first.years_created, first.years_updated), (3, 0))
 
-        second = sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        second = sync.sync_models(
+            FakeFipeClient(), brand_codes=[21], refresh_existing=True
+        )
         self.assertEqual((second.models_created, second.models_updated), (0, 2))
         self.assertEqual((second.years_created, second.years_updated), (0, 3))
 
-    def test_corrects_a_renamed_model(self):
+    def test_corrects_a_renamed_model_when_refreshing(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        VehicleModel.objects.filter(fipe_code=4712).update(name="Palio errado")
+
+        sync.sync_models(FakeFipeClient(), brand_codes=[21], refresh_existing=True)
+        self.assertEqual(VehicleModel.objects.get(fipe_code=4712).name, "Palio EX 1.0")
+
+    def test_skips_models_already_saved(self):
+        # The whole point: one request per model, so a resumed sweep must not
+        # pay again for what it already has.
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+
+        client = FakeFipeClient()
+        result = sync.sync_models(client, brand_codes=[21])
+
+        self.assertEqual(client.count("model_years"), 0)
+        self.assertEqual(result.models_skipped, 2)
+        self.assertEqual((result.models_created, result.models_updated), (0, 0))
+
+    def test_skipping_leaves_a_renamed_model_alone(self):
+        # The cost of skipping, stated out loud: without --refresh-existing a
+        # FIPE rename is not picked up.
         sync.sync_models(FakeFipeClient(), brand_codes=[21])
         VehicleModel.objects.filter(fipe_code=4712).update(name="Palio errado")
 
         sync.sync_models(FakeFipeClient(), brand_codes=[21])
-        self.assertEqual(VehicleModel.objects.get(fipe_code=4712).name, "Palio EX 1.0")
+        self.assertEqual(VehicleModel.objects.get(fipe_code=4712).name, "Palio errado")
+
+    def test_refresh_existing_asks_for_every_model_again(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+
+        client = FakeFipeClient()
+        result = sync.sync_models(client, brand_codes=[21], refresh_existing=True)
+
+        self.assertEqual(client.count("model_years"), 2)
+        self.assertEqual(result.models_skipped, 0)
+
+    def test_a_model_saved_without_years_is_not_skipped(self):
+        # An interrupted sweep can leave a model row with no years. Skipping it
+        # on the "already saved" test alone would strand it forever.
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+        ModelYear.objects.filter(vehicle_model__fipe_code=4712).delete()
+
+        client = FakeFipeClient()
+        result = sync.sync_models(client, brand_codes=[21])
+
+        self.assertEqual(client.count("model_years"), 1)
+        self.assertEqual(result.models_skipped, 1)
+        self.assertEqual(ModelYear.objects.filter(vehicle_model__fipe_code=4712).count(), 1)
 
     def test_walks_all_brands_by_default(self):
         client = FakeFipeClient()
