@@ -95,6 +95,23 @@ def resolve_reference_table(client, period=None):
     return reference
 
 
+def reference_table_map(client):
+    """``{(year, month): ReferenceTable}`` for every table FIPE offers.
+
+    One request, resolved once per worker pass: the on-demand queue asks for
+    dozens of periods and must not re-fetch the catalogue for each one. A period
+    absent from this map is one FIPE does not have, and is skipped rather than
+    treated as an error.
+    """
+    table = {}
+    for data in parsers.parse_reference_tables(client.reference_tables()):
+        reference, _ = ReferenceTable.objects.get_or_create(
+            fipe_code=data.fipe_code, defaults={"month": data.month, "year": data.year}
+        )
+        table[(data.year, data.month)] = reference
+    return table
+
+
 def start_run(reference, vehicle_type, resume=False):
     """Create a CrawlRun, or pick up the last unfinished one when resuming."""
     if resume:

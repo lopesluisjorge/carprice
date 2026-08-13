@@ -356,6 +356,27 @@ class ResumeTests(TestCase):
         self.assertEqual(CrawlRun.objects.count(), 2)
 
 
+class ReferenceTableMapTests(TestCase):
+    def test_maps_every_period_fipe_offers(self):
+        client = FakeFipeClient()
+        table = sync.reference_table_map(client)
+
+        self.assertEqual(set(table), {(2025, 6), (2025, 5), (2025, 4)})
+        self.assertEqual(table[(2025, 6)].fipe_code, 322)
+
+    def test_creates_the_rows_once(self):
+        sync.reference_table_map(FakeFipeClient())
+        sync.reference_table_map(FakeFipeClient())
+
+        self.assertEqual(ReferenceTable.objects.count(), 3)
+
+    def test_costs_a_single_request(self):
+        client = FakeFipeClient()
+        sync.reference_table_map(client)
+
+        self.assertEqual(client.count("reference_tables"), 1)
+
+
 class UpsertQuoteTests(TestCase):
     def setUp(self):
         self.client_ = FakeFipeClient()
