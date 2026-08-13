@@ -192,9 +192,18 @@ O termo do usuário vira literal entre aspas com prefixo (`corsa` → `"corsa"*`
 
 ### Filtros e cards
 
-O card é um `VehicleModel`, mas os filtros agem em `ModelYear`, então há uma etapa de
-agregação. **`values().annotate()` sobre `PriceQuote` precisa de `.order_by()` vazio** — senão o
-`Meta.ordering` entra no `GROUP BY` e parte cada modelo em uma linha por mês de referência.
+O card é um `VehicleModel`, mas os filtros agem em `ModelYear`, então há uma etapa de agregação.
+
+**Todo `values()` com `annotate()` ou `distinct()` nestes models precisa de `.order_by()`
+vazio.** `PriceQuote` e `ModelYear` têm `Meta.ordering`, e o Django arrasta o campo de ordenação
+para dentro da consulta — onde ele silenciosamente muda o resultado. Já mordeu duas vezes:
+
+- `values().annotate()` em `PriceQuote`: o `-reference_table__year` entra no `GROUP BY` e parte
+  cada modelo em uma linha por mês de referência;
+- `values_list().distinct()` em `ModelYear`: o `-year` entra no `SELECT`, o `DISTINCT` passa a
+  valer para o par, e o filtro de combustível exibia 126 checkboxes em vez de 7.
+
+O sintoma é sempre "duplicou algo que deveria ser único", nunca um erro.
 
 A faixa de preço usa só a referência mais recente: misturar meses daria um intervalo que não
 existiu em mês nenhum. A contagem no card é de **versões** (ano *e* combustível), não de anos —
