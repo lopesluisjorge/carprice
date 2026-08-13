@@ -31,8 +31,9 @@ MODEL_YEARS = "ConsultarAnoModelo"
 PRICE = "ConsultarValorComTodosParametros"
 
 # The API tolerates very little volume — it answers 429 well before any
-# documented limit — so quotes are capped over a sliding minute.
-DEFAULT_QUOTES_PER_MINUTE = 28
+# documented limit, and on *any* endpoint — so every request is capped over a
+# sliding minute. The observed ceiling is a flexible ~50/min; 40 leaves a band.
+DEFAULT_REQUESTS_PER_MINUTE = 40
 QUOTA_WINDOW = 60.0
 DEFAULT_RATE_LIMIT_RETRIES = 5
 # Once the quota saturates, every quote waits a couple of seconds. Reporting
@@ -73,7 +74,7 @@ class FipeClient:
         max_retries=3,
         backoff=2.0,
         user_agent=DEFAULT_USER_AGENT,
-        quotes_per_minute=DEFAULT_QUOTES_PER_MINUTE,
+        requests_per_minute=DEFAULT_REQUESTS_PER_MINUTE,
         max_rate_limit_retries=DEFAULT_RATE_LIMIT_RETRIES,
         on_wait=None,
         sleep=time.sleep,
@@ -85,16 +86,16 @@ class FipeClient:
         self.max_retries = max_retries
         self.backoff = backoff
         self.user_agent = user_agent
-        self.quotes_per_minute = quotes_per_minute
+        self.requests_per_minute = requests_per_minute
         self.max_rate_limit_retries = max_rate_limit_retries
         self.on_wait = on_wait
         # Injectable so the quota can be tested without real time passing.
         self._sleep = sleep
         self._monotonic = monotonic
         self._last_request_at = 0.0
-        # Timestamp of each quote in the last minute; the oldest frees a slot
+        # Timestamp of each request in the last minute; the oldest frees a slot
         # exactly QUOTA_WINDOW seconds after it was spent.
-        self._quote_times = collections.deque()
+        self._request_times = collections.deque()
         self._last_wait_report_at = None
         # Counters, so a 429 can be pinned to an exact request.
         self.requests_made = 0
@@ -141,10 +142,8 @@ class FipeClient:
     def price(self, reference_code, vehicle_type, brand_code, model_code, fipe_year_code):
         """Fetch one quote. ``fipe_year_code`` looks like ``"2014-3"`` (year-fuel).
 
-        Subject to the per-minute quota: the call blocks until the current
-        minute has room.
+        Like every request, subject to the per-minute quota enforced in ``_post``.
         """
-        self._await_quota()
         self.quotes_requested += 1
         year, _, fuel = fipe_year_code.partition("-")
         return self._post(
@@ -190,6 +189,9 @@ class FipeClient:
         last_error = None
         while True:
             self._throttle()
+            # The per-minute cap covers every endpoint, not just quotes: FIPE
+            # answers 429 on any of them, so the sliding window lives here.
+            self._await_slot()
             # Counted per network attempt, retries included, so the number in a
             # 429 message matches what the server actually saw.
             self.requests_made += 1
@@ -245,43 +247,43 @@ class FipeClient:
 
     # -- per-minute quota --------------------------------------------------
 
-    def _await_quota(self):
-        """Allow ``quotes_per_minute`` quotes per *sliding* minute.
+    def _await_slot(self):
+        """Allow ``requests_per_minute`` requests per *sliding* minute.
 
-        Each quote holds a slot for exactly ``QUOTA_WINDOW`` seconds and frees
+        Each request holds a slot for exactly ``QUOTA_WINDOW`` seconds and frees
         it the instant that minute is up, so the crawler settles into a steady
         rate instead of stalling in bursts at a window boundary.
         """
-        if not self.quotes_per_minute:
+        if not self.requests_per_minute:
             return
 
         now = self._monotonic()
         self._release_expired_slots(now)
-        if len(self._quote_times) >= self.quotes_per_minute:
-            wait = self._quote_times[0] + QUOTA_WINDOW - now
+        if len(self._request_times) >= self.requests_per_minute:
+            wait = self._request_times[0] + QUOTA_WINDOW - now
             if wait > 0:
                 if wait >= MIN_REPORTED_WAIT:
                     self._report_quota_wait(
-                        f"Cota de {self.quotes_per_minute} cotações/min atingida na "
+                        f"Cota de {self.requests_per_minute} requisições/min atingida na "
                         f"requisição #{self.requests_made} (cotação #{self.quotes_requested}); "
                         f"aguardando {wait:.1f}s pelo próximo slot."
                     )
                 self._sleep(wait)
                 now = self._monotonic()
                 self._release_expired_slots(now)
-        self._quote_times.append(now)
+        self._request_times.append(now)
 
     def _release_expired_slots(self, now):
-        """Drop the quotes that completed a full minute — their slots are free."""
+        """Drop the requests that completed a full minute — their slots are free."""
         cutoff = now - QUOTA_WINDOW
-        while self._quote_times and self._quote_times[0] <= cutoff:
-            self._quote_times.popleft()
+        while self._request_times and self._request_times[0] <= cutoff:
+            self._request_times.popleft()
 
     def _pause_for_rate_limit(self, endpoint):
         """Back off for exactly one minute after a 429, then start clean."""
         where = (
             f"requisição #{self.requests_made}, cotação #{self.quotes_requested}, "
-            f"{len(self._quote_times)} no último minuto"
+            f"{len(self._request_times)} no último minuto"
         )
         self._report_wait(
             f"HTTP 429 em {endpoint} ({where}); aguardando {QUOTA_WINDOW:.0f}s."
@@ -295,7 +297,7 @@ class FipeClient:
         )
         self._sleep(QUOTA_WINDOW)
         # A full minute passed, so every slot is free again.
-        self._quote_times.clear()
+        self._request_times.clear()
 
     def _report_quota_wait(self, message):
         """Announce a quota wait, but no more than once per WAIT_REPORT_INTERVAL."""

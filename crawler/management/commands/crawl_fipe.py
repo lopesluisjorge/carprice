@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from crawler.fipe import FipeClient, FipeError
-from crawler.fipe.client import DEFAULT_QUOTES_PER_MINUTE
+from crawler.fipe.client import DEFAULT_REQUESTS_PER_MINUTE
 from crawler.models import VehicleType
 from crawler.services import sync
 
@@ -72,12 +72,13 @@ class Command(BaseCommand):
             help="Segundos entre requisições. Padrão: 0.5.",
         )
         parser.add_argument(
-            "--quotes-per-minute",
+            "--requests-per-minute",
             type=int,
-            default=DEFAULT_QUOTES_PER_MINUTE,
+            default=DEFAULT_REQUESTS_PER_MINUTE,
             help=(
-                "Máximo de cotações por minuto corrido; cada slot é liberado 60s após ser "
-                f"usado. Padrão: {DEFAULT_QUOTES_PER_MINUTE}. Use 0 para desligar a cota."
+                "Máximo de requisições por minuto corrido (todos os endpoints); cada slot é "
+                f"liberado 60s após ser usado. Padrão: {DEFAULT_REQUESTS_PER_MINUTE}. Use 0 "
+                "para desligar a cota."
             ),
         )
 
@@ -89,7 +90,7 @@ class Command(BaseCommand):
         progress = sync.CrawlProgress()
         client = FipeClient(
             delay=options["delay"],
-            quotes_per_minute=options["quotes_per_minute"],
+            requests_per_minute=options["requests_per_minute"],
             on_wait=lambda message: self.log(
                 f"  {message} — {progress.summary()}", self.style.WARNING
             ),

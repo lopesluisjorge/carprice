@@ -96,34 +96,33 @@ class QuotaTests(SimpleTestCase):
         self.clock = FakeClock()
 
     def fetch(self, client, times):
+        # The window governs every request now, so drive it directly: build_client
+        # stubs _post, which is where the real quota lives.
         for _ in range(times):
-            client.price(322, 1, 21, 4828, "2013-1")
+            client._await_slot()
 
     def test_allows_the_full_quota_without_waiting(self):
-        client = build_client(self.clock, quotes_per_minute=20)
+        client = build_client(self.clock, requests_per_minute=20)
         self.fetch(client, 20)
 
         self.assertEqual(self.clock.slept, [])
-        self.assertEqual(len(client.posts), 20)
 
-    def test_quote_beyond_the_quota_waits_for_the_next_window(self):
-        client = build_client(self.clock, quotes_per_minute=20)
+    def test_request_beyond_the_quota_waits_for_the_next_window(self):
+        client = build_client(self.clock, requests_per_minute=20)
         self.fetch(client, 20)
         self.clock.tick(15)
         self.fetch(client, 1)
 
         self.assertEqual(self.clock.slept, [45.0])
-        self.assertEqual(len(client.posts), 21)
 
-    def test_spreads_forty_five_quotes_over_three_minutes(self):
-        client = build_client(self.clock, quotes_per_minute=20)
+    def test_spreads_forty_five_requests_over_three_minutes(self):
+        client = build_client(self.clock, requests_per_minute=20)
         self.fetch(client, 45)
 
-        self.assertEqual(len(client.posts), 45)
         self.assertEqual(self.clock.slept, [60.0, 60.0])
 
     def test_each_slot_frees_exactly_one_minute_after_it_was_used(self):
-        client = build_client(self.clock, quotes_per_minute=2)
+        client = build_client(self.clock, requests_per_minute=2)
         self.fetch(client, 1)  # slot taken at t
         self.clock.tick(10)
         self.fetch(client, 1)  # slot taken at t+10
@@ -135,7 +134,7 @@ class QuotaTests(SimpleTestCase):
         self.assertEqual(self.clock.slept, [45.0])
 
     def test_a_freed_slot_is_reused_without_waiting(self):
-        client = build_client(self.clock, quotes_per_minute=2)
+        client = build_client(self.clock, requests_per_minute=2)
         self.fetch(client, 2)
         self.clock.tick(61)  # both slots have served their minute
 
@@ -145,7 +144,7 @@ class QuotaTests(SimpleTestCase):
 
     def test_repeated_wait_reports_are_throttled(self):
         messages = []
-        client = build_client(self.clock, quotes_per_minute=2, on_wait=messages.append)
+        client = build_client(self.clock, requests_per_minute=2, on_wait=messages.append)
 
         client._report_quota_wait("primeira")
         client._report_quota_wait("logo em seguida")
@@ -155,7 +154,7 @@ class QuotaTests(SimpleTestCase):
         self.assertEqual(messages, ["primeira", "depois do intervalo"])
 
     def test_a_slow_window_does_not_carry_debt_forward(self):
-        client = build_client(self.clock, quotes_per_minute=20)
+        client = build_client(self.clock, requests_per_minute=20)
         self.fetch(client, 5)
         self.clock.tick(90)  # window expired on its own
         self.fetch(client, 20)
@@ -163,21 +162,30 @@ class QuotaTests(SimpleTestCase):
         self.assertEqual(self.clock.slept, [])
 
     def test_quota_can_be_disabled(self):
-        client = build_client(self.clock, quotes_per_minute=0)
+        client = build_client(self.clock, requests_per_minute=0)
         self.fetch(client, 100)
 
         self.assertEqual(self.clock.slept, [])
 
-    def test_catalogue_calls_are_not_charged_to_the_quota(self):
-        client = build_client(self.clock, quotes_per_minute=20)
-        for _ in range(50):
+    def test_every_endpoint_is_charged_to_the_quota(self):
+        # The whole point of the fix: a catalogue call (here ConsultarMarcas)
+        # takes a slot too, so a models-only sweep can no longer outrun the cap.
+        client = FipeClient(
+            delay=0,
+            sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
+            requests_per_minute=2,
+        )
+        with patch_urlopen([ok(b"{}")] * 3):
+            client.brands(322, 1)
+            client.brands(322, 1)
             client.brands(322, 1)
 
-        self.assertEqual(self.clock.slept, [])
+        self.assertEqual(self.clock.slept, [60.0])
 
     def test_reports_the_wait(self):
         messages = []
-        client = build_client(self.clock, quotes_per_minute=2, on_wait=messages.append)
+        client = build_client(self.clock, requests_per_minute=2, on_wait=messages.append)
         self.fetch(client, 3)
 
         self.assertEqual(len(messages), 1)
@@ -185,7 +193,7 @@ class QuotaTests(SimpleTestCase):
 
     def test_sub_second_waits_are_not_reported(self):
         messages = []
-        client = build_client(self.clock, quotes_per_minute=2, on_wait=messages.append)
+        client = build_client(self.clock, requests_per_minute=2, on_wait=messages.append)
         self.fetch(client, 2)
         self.clock.tick(59.5)  # the first slot frees in half a second
 
@@ -248,7 +256,7 @@ class RequestCounterTests(SimpleTestCase):
 
     def test_the_quota_message_names_the_request(self):
         messages = []
-        client = self.live_client(quotes_per_minute=2, on_wait=messages.append)
+        client = self.live_client(requests_per_minute=2, on_wait=messages.append)
         with patch_urlopen([ok(b"{}")] * 3):
             for _ in range(3):
                 client.price(322, 1, 21, 4828, "2013-1")
@@ -320,7 +328,7 @@ class RateLimitTests(SimpleTestCase):
 
     def test_the_wait_is_a_full_minute_regardless_of_elapsed_time(self):
         client = self.live_client()
-        client._quote_times.append(self.clock.monotonic())
+        client._request_times.append(self.clock.monotonic())
         self.clock.tick(50)
 
         client._pause_for_rate_limit("Endpoint")
@@ -328,21 +336,21 @@ class RateLimitTests(SimpleTestCase):
         self.assertEqual(self.clock.slept, [60.0])
 
     def test_a_429_frees_every_slot(self):
-        client = self.live_client(quotes_per_minute=20)
+        client = self.live_client(requests_per_minute=20)
         for _ in range(20):
-            client._quote_times.append(self.clock.monotonic())
+            client._request_times.append(self.clock.monotonic())
 
         client._pause_for_rate_limit("Endpoint")
 
-        self.assertEqual(len(client._quote_times), 0)
+        self.assertEqual(len(client._request_times), 0)
 
-    def test_after_a_429_the_next_quote_does_not_wait(self):
-        client = build_client(self.clock, quotes_per_minute=2)
-        client.price(322, 1, 21, 4828, "2013-1")
-        client.price(322, 1, 21, 4828, "2012-2")
-        client._pause_for_rate_limit("Endpoint")
+    def test_after_a_429_the_next_request_does_not_wait(self):
+        client = build_client(self.clock, requests_per_minute=2)
+        client._await_slot()
+        client._await_slot()  # window full
+        client._pause_for_rate_limit("Endpoint")  # clears it
         self.clock.slept.clear()
 
-        client.price(322, 1, 21, 4712, "32000-1")
+        client._await_slot()
 
         self.assertEqual(self.clock.slept, [])

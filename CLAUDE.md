@@ -88,7 +88,7 @@ python manage.py crawl_fipe --models-only --brand 21   # modelos e anos da marca
 python manage.py crawl_fipe --reference 2024-01  # backfill de um mês específico
 python manage.py crawl_fipe --brand 21 --limit 50
 python manage.py crawl_fipe --resume             # retoma o último CrawlRun incompleto
-python manage.py crawl_fipe --quotes-per-minute 10   # mais conservador que o padrão (20)
+python manage.py crawl_fipe --requests-per-minute 20   # mais conservador que o padrão (40)
 python manage.py crawl_fipe --dry-run
 ```
 
@@ -108,10 +108,17 @@ Invariantes:
 
 - **Idempotente.** Rodar duas vezes o mesmo mês não duplica nem altera nada.
 - **Retomável.** Falha no meio deixa `CrawlRun` + `CrawlCheckpoint` consistentes para `--resume`.
-- **Dentro da cota.** No máximo `--quotes-per-minute` cotações por minuto corrido (padrão 30),
-  em **janela deslizante**: cada cotação segura um slot por exatamente 60s e o devolve no
-  instante em que o minuto fecha, então a coleta entra em ritmo constante em vez de parar em
-  blocos. Não aumente sem o usuário pedir — a API é sensível.
+- **Dentro da cota.** No máximo `--requests-per-minute` **requisições** por minuto corrido
+  (padrão 40), em **janela deslizante**: cada requisição — de qualquer endpoint — segura um slot
+  por exatamente 60s e o devolve no instante em que o minuto fecha, então a coleta entra em ritmo
+  constante em vez de parar em blocos. Não aumente sem o usuário pedir — a API é sensível, com
+  teto flexível observado em ~50/min.
+
+  A cota é **por requisição, não por cotação** de propósito: a FIPE responde 429 em qualquer
+  endpoint, inclusive `ConsultarAnoModelo`. Uma versão anterior contava só as cotações (`price`),
+  e o `--models-only` — que nunca chama `price` — passava reto pela cota e tomava 429 em série.
+  O slot é tomado no `_post`, então todo endpoint entra na conta; `quotes_requested` continua
+  existindo, mas só para o relatório final.
 
 ### Limites da API
 
@@ -138,7 +145,7 @@ existentes, processados e faltantes. O comando passa a mesma instância para o `
 cliente, então **toda pausa imprime onde a varredura está**:
 
 ```
-[2026-08-12 23:24:47]   Cota de 10 cotações/min atingida na requisição #17 (cotação #10);
+[2026-08-12 23:24:47]   Cota de 20 requisições/min atingida na requisição #21 (cotação #10);
   aguardando 53.0s pelo próximo slot. — marca 1/1 (Fiat) · modelos: 585 existentes,
   3 processados, 582 faltantes · 10 cotações
 ```
@@ -148,7 +155,7 @@ evitam poluir o log a cada modelo. Com a janela deslizante as esperas viram de p
 então esperas abaixo de 1s não são anunciadas e o aviso sai no máximo a cada 30s
 (`MIN_REPORTED_WAIT` e `WAIT_REPORT_INTERVAL`).
 
-O volume é grande: só a Fiat tem 585 modelos. A 20 cotações/min, uma carga completa de carros
+O volume é grande: só a Fiat tem 585 modelos. A 40 requisições/min, uma carga completa de carros
 leva dias — prefira `--brand` por marca, com `--resume`.
 
 ## Web
