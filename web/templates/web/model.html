@@ -12,7 +12,7 @@
     {{ vehicle_model.name }}
   </h1>
   <p class="mt-2 text-sm text-slate-500">
-    {{ versions|length }} versã{{ versions|length|pluralize:"o,es" }}{% if reference_table %} · referência {{ reference_table }}{% endif %}
+    {{ versions|length }} vers{{ versions|length|pluralize:"ão,ões" }}{% if reference_table %} · referência {{ reference_table }}{% endif %}
   </p>
 
   <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -40,6 +40,14 @@ class SearchScreenTests(TestCase):
         self.assertContains(response, "Uno Mille")
         self.assertNotContains(response, "<html")
 
+    def test_version_count_is_spelled_in_portuguese(self):
+        # "versã" + "es" would come out as "versães"; the stem is "vers".
+        build_vehicle(model_code=1, year=2016, fuel=FuelType.GASOLINE)
+        add_quote(self.uno.vehicle_model.model_years.get(year=2016), 2026, 8, "39000.00")
+        response = self.client.get(reverse("web:home"))
+        self.assertContains(response, "2 versões")
+        self.assertNotContains(response, "versães")
+
     def test_cascade_endpoints_are_gone(self):
         for name in ["web:model_options", "web:year_options"]:
             with self.subTest(name=name):

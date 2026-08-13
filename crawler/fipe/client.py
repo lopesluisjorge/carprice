@@ -32,7 +32,7 @@ PRICE = "ConsultarValorComTodosParametros"
 
 # The API tolerates very little volume — it answers 429 well before any
 # documented limit — so quotes are capped over a sliding minute.
-DEFAULT_QUOTES_PER_MINUTE = 20
+DEFAULT_QUOTES_PER_MINUTE = 28
 QUOTA_WINDOW = 60.0
 DEFAULT_RATE_LIMIT_RETRIES = 5
 # Once the quota saturates, every quote waits a couple of seconds. Reporting
