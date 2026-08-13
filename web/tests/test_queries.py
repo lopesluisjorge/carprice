@@ -41,6 +41,27 @@ class VariationTests(TestCase):
         self.assertNotIn("percent", variations[0])
 
 
+class AvailableFacetsTests(TestCase):
+    """The sidebar options. ModelYear.Meta.ordering is ["-year"], which Django
+    drags into the SELECT of a DISTINCT — making it distinct over the *pair*
+    and repeating every fuel once per year it appears in."""
+
+    def test_each_fuel_is_offered_once(self):
+        build_vehicle(model_code=1, year=2015, fuel=FuelType.FLEX)
+        build_vehicle(model_code=1, year=2016, fuel=FuelType.FLEX)
+        build_vehicle(model_code=1, year=2017, fuel=FuelType.GASOLINE)
+        self.assertEqual(queries.available_fuels(), [FuelType.GASOLINE, FuelType.FLEX])
+
+    def test_each_year_is_offered_once(self):
+        build_vehicle(model_code=1, year=2015, fuel=FuelType.FLEX)
+        build_vehicle(model_code=1, year=2015, fuel=FuelType.GASOLINE)
+        self.assertEqual(queries.available_years(), [2015])
+
+    def test_zero_km_is_not_offered_as_a_year(self):
+        build_vehicle(model_code=1, year=ZERO_KM_YEAR, fuel=FuelType.FLEX)
+        self.assertEqual(queries.available_years(), [])
+
+
 class SearchModelsTests(TestCase):
     def setUp(self):
         self.uno = build_vehicle(model_code=1, year=2015, fuel=FuelType.FLEX)

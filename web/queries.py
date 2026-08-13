@@ -34,15 +34,25 @@ def latest_reference_table():
     return ReferenceTable.objects.first()
 
 
+# ModelYear.Meta.ordering is ["-year"], and Django drags an ordering field into
+# the SELECT of a DISTINCT query — which would make it distinct over the pair and
+# repeat every fuel once per year it appears in. Hence the empty order_by().
 def available_fuels():
     """The fuels present in the data, not a fixed list — an unnamed FIPE code
     shows up as a bare number instead of disappearing from the filter."""
-    return sorted(ModelYear.objects.values_list("fuel_type", flat=True).distinct())
+    return sorted(
+        ModelYear.objects.values_list("fuel_type", flat=True).order_by().distinct()
+    )
 
 
 def available_years():
-    years = ModelYear.objects.exclude(year=ZERO_KM_YEAR).values_list("year", flat=True)
-    return sorted(set(years), reverse=True)
+    years = (
+        ModelYear.objects.exclude(year=ZERO_KM_YEAR)
+        .values_list("year", flat=True)
+        .order_by()
+        .distinct()
+    )
+    return sorted(years, reverse=True)
 
 
 def search_models(filters):
