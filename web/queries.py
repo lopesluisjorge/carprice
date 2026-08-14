@@ -83,6 +83,16 @@ def search_models(filters):
         return Paginator([], PER_PAGE).get_page(1)
 
     model_years_qs = ModelYear.objects.all()
+    if filters.brand:
+        brand_lookups = codes.decode_brand(filters.brand)
+        # A malformed code disables the filter instead of narrowing to nothing.
+        if brand_lookups is not None:
+            model_years_qs = model_years_qs.filter(
+                **{
+                    f"vehicle_model__brand__{field}": value
+                    for field, value in brand_lookups.items()
+                }
+            )
     if filters.fuels:
         model_years_qs = model_years_qs.filter(fuel_type__in=filters.fuels)
     if filters.year is not None:

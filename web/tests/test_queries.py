@@ -136,3 +136,15 @@ class SearchModelsTests(TestCase):
     def test_price_floor_drops_the_cheaper_model(self):
         page = queries.search_models(SearchFilters(price_op="gte", price=39000))
         self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {1})
+
+    def test_brand_filter_keeps_only_that_brand(self):
+        other = build_vehicle(brand_code=13, model_code=9, year=2015, brand_name="Citroën")
+        add_quote(other, 2026, 8, "50000.00")
+        page = queries.search_models(SearchFilters(brand="1-13"))
+        self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {9})
+
+    def test_a_malformed_brand_code_disables_the_filter(self):
+        # Mesmo comportamento de um ano não-numérico: desliga o filtro em vez de
+        # estreitar para nada por acidente.
+        page = queries.search_models(SearchFilters(brand="lixo"))
+        self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {1, 2})
