@@ -120,3 +120,19 @@ class SearchModelsTests(TestCase):
         self.assertIn(3, codes_for("gte", 2015))
         self.assertNotIn(3, codes_for("lte", 2015))
         self.assertNotIn(3, codes_for("eq", 2015))
+
+    def test_price_ceiling_keeps_a_model_with_one_version_in_range(self):
+        page = queries.search_models(SearchFilters(price_op="lte", price=39000))
+        self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {1, 2})
+
+    def test_the_card_shrinks_to_the_versions_that_matched(self):
+        # Mesma semântica que combustível e ano já têm: o card mostra o que casou.
+        page = queries.search_models(SearchFilters(price_op="lte", price=39000))
+        card = next(c for c in page if c["vehicle_model"].fipe_code == 1)
+        self.assertEqual(card["min_value"], Decimal("38000.00"))
+        self.assertEqual(card["max_value"], Decimal("38000.00"))
+        self.assertEqual(card["versions"], 1)
+
+    def test_price_floor_drops_the_cheaper_model(self):
+        page = queries.search_models(SearchFilters(price_op="gte", price=39000))
+        self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {1})

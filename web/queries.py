@@ -92,9 +92,16 @@ def search_models(filters):
     if ranked_ids is not None:
         model_years_qs = model_years_qs.filter(vehicle_model_id__in=ranked_ids)
 
+    # Price lives on PriceQuote, not on ModelYear, so it narrows the quotes
+    # instead of the versions. A model shows up when it has at least one version
+    # in range, and the card's range and count then describe only the versions
+    # that matched — which is what fuel and year already do.
+    quotes = PriceQuote.objects.filter(reference_table=reference, model_year__in=model_years_qs)
+    if filters.price is not None:
+        quotes = quotes.filter(**{filters.price_lookup: filters.price})
+
     rows = (
-        PriceQuote.objects.filter(reference_table=reference, model_year__in=model_years_qs)
-        .values("model_year__vehicle_model")
+        quotes.values("model_year__vehicle_model")
         .annotate(
             min_value=Min("value"),
             max_value=Max("value"),
