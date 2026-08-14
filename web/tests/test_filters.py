@@ -35,10 +35,44 @@ class ParsingTests(SimpleTestCase):
         self.assertEqual(parse("page=abc").page, 1)
         self.assertEqual(parse("page=-4").page, 1)
 
+    def test_reads_the_brand_price_and_sort_fields(self):
+        filters = parse("brand=1-21&price_op=gte&price=50000&sort=price_desc")
+        self.assertEqual(filters.brand, "1-21")
+        self.assertEqual(filters.price_op, "gte")
+        self.assertEqual(filters.price, 50000)
+        self.assertEqual(filters.sort, "price_desc")
+
+    def test_price_defaults_to_at_most(self):
+        # Ano se procura "a partir de"; preço, por teto de orçamento.
+        self.assertEqual(parse("").price_op, "lte")
+
+    def test_unknown_price_operator_falls_back_to_the_default(self):
+        # "eq" existe para ano e não para preço.
+        self.assertEqual(parse("price_op=eq&price=50000").price_op, "lte")
+
+    def test_non_positive_or_non_numeric_price_disables_the_filter(self):
+        for querystring in ["price=barato", "price=-5", "price=0"]:
+            with self.subTest(querystring=querystring):
+                self.assertIsNone(parse(querystring).price)
+
+    def test_a_price_outside_the_steps_is_honoured(self):
+        # O CLAUDE.md promete que a URL volta igual numa aba nova.
+        self.assertEqual(parse("price=43500").price, 43500)
+
+    def test_unknown_sort_is_dropped(self):
+        self.assertEqual(parse("sort=drop").sort, "")
+
+    def test_sorting_alone_still_counts_as_an_empty_filter(self):
+        # Ordenar não é filtrar: a tela vazia continua dizendo "colete dados".
+        self.assertTrue(parse("sort=price_asc").is_empty)
+
 
 class QuerystringTests(SimpleTestCase):
     def test_round_trip(self):
-        original = "q=corsa&fuel=5&fuel=6&year_op=lte&year=2015&page=3"
+        original = (
+            "q=corsa&brand=1-21&fuel=5&fuel=6&year_op=lte&year=2015"
+            "&price_op=gte&price=50000&sort=price_asc&page=3"
+        )
         self.assertEqual(parse(parse(original).querystring()), parse(original))
 
     def test_empty_filters_produce_an_empty_querystring(self):
