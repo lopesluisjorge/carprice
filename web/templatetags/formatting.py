@@ -42,9 +42,14 @@ def percent(value):
 
 
 @register.filter
-def model_year_label(model_year):
+def year_label(year):
     """The year as shown to the reader — FIPE's 32000 means brand new."""
-    return "0 km" if model_year.year == ZERO_KM_YEAR else str(model_year.year)
+    return "0 km" if year == ZERO_KM_YEAR else str(year)
+
+
+@register.filter
+def model_year_label(model_year):
+    return year_label(model_year.year)
 
 
 @register.filter

@@ -124,6 +124,8 @@ def search_models(filters):
         .annotate(
             min_value=Min("value"),
             max_value=Max("value"),
+            min_year=Min("model_year__year"),
+            max_year=Max("model_year__year"),
             versions=Count("model_year", distinct=True),
         )
         # PriceQuote.Meta.ordering would otherwise join the GROUP BY and split

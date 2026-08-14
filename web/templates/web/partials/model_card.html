@@ -11,6 +11,12 @@
     {% endif %}
   </p>
   <p class="mt-1 text-xs text-slate-500">
-    {{ card.versions }} vers{{ card.versions|pluralize:"ão,ões" }} · {{ card.reference_table }}
+    {{ card.versions }} vers{{ card.versions|pluralize:"ão,ões" }} ·
+    {% if card.min_year == card.max_year %}
+      {{ card.min_year|year_label }}
+    {% else %}
+      {{ card.min_year|year_label }}<span class="text-slate-400">–</span>{{ card.max_year|year_label }}
+    {% endif %}
+    · {{ card.reference_table }}
   </p>
 </a>

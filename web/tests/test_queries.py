@@ -88,6 +88,23 @@ class SearchModelsTests(TestCase):
         self.assertEqual(cards[1]["min_value"], Decimal("38000.00"))
         self.assertEqual(cards[1]["max_value"], Decimal("40000.00"))
 
+    def test_year_range_covers_the_versions_on_the_card(self):
+        older = build_vehicle(model_code=1, year=2012, fuel=FuelType.FLEX)
+        add_quote(older, 2026, 8, "30000.00")
+        page = queries.search_models(SearchFilters())
+        cards = {card["vehicle_model"].fipe_code: card for card in page}
+        self.assertEqual((cards[1]["min_year"], cards[1]["max_year"]), (2012, 2015))
+        # Um único ano vira as duas pontas, e a tela mostra um valor só.
+        self.assertEqual((cards[2]["min_year"], cards[2]["max_year"]), (2010, 2010))
+
+    def test_year_range_shrinks_with_the_filters(self):
+        # Mesma semântica do preço: o card descreve o que casou.
+        older = build_vehicle(model_code=1, year=2012, fuel=FuelType.FLEX)
+        add_quote(older, 2026, 8, "30000.00")
+        page = queries.search_models(SearchFilters(price_op="lte", price=35000))
+        card = next(c for c in page if c["vehicle_model"].fipe_code == 1)
+        self.assertEqual((card["min_year"], card["max_year"]), (2012, 2012))
+
     def test_price_range_uses_only_the_newest_reference(self):
         # An older, cheaper month must not drag the range down.
         add_quote(self.uno, 2026, 7, "10000.00")

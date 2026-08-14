@@ -353,7 +353,10 @@ O sintoma é sempre "duplicou algo que deveria ser único", nunca um erro.
 
 A faixa de preço usa só a referência mais recente: misturar meses daria um intervalo que não
 existiu em mês nenhum. A contagem no card é de **versões** (ano *e* combustível), não de anos —
-2017 flex e 2017 gasolina são duas versões num ano só.
+2017 flex e 2017 gasolina são duas versões num ano só. Por isso o card mostra também a **faixa de
+ano/modelo** (`min_year`/`max_year`, mesma agregação): sem ela, "3 versões" não diz se são três
+anos ou três combustíveis do mesmo ano. A faixa acompanha os filtros como o preço e a contagem —
+descreve as versões que casaram, não o modelo inteiro.
 
 O 0 km (ano 32000) vale como o ano mais novo: `>=` inclui, `<=` e `=` excluem. Isso é a
 comparação numérica crua, sem código especial.
