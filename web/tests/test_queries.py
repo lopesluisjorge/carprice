@@ -61,6 +61,16 @@ class AvailableFacetsTests(TestCase):
         build_vehicle(model_code=1, year=ZERO_KM_YEAR, fuel=FuelType.FLEX)
         self.assertEqual(queries.available_years(), [])
 
+    def test_brands_are_offered_once_and_only_when_priced(self):
+        # Mais estrito que os outros facets de propósito: entre ~100 marcas, uma
+        # opção que não devolve nada vira lista de decepções.
+        priced = build_vehicle(brand_code=21, model_code=1, year=2015)
+        build_vehicle(brand_code=21, model_code=2, year=2016)
+        build_vehicle(brand_code=13, model_code=3, year=2015, brand_name="Citroën")
+        add_quote(priced, 2026, 8, "40000.00")
+
+        self.assertEqual([brand.fipe_code for brand in queries.available_brands()], [21])
+
 
 class SearchModelsTests(TestCase):
     def setUp(self):

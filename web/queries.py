@@ -10,6 +10,7 @@ from django.db.models import Max
 from django.db.models import Min
 from django.db.models import Prefetch
 
+from crawler.models import Brand
 from crawler.models import ModelYear
 from crawler.models import PriceQuote
 from crawler.models import ReferenceTable
@@ -53,6 +54,26 @@ def available_years():
         .distinct()
     )
     return sorted(years, reverse=True)
+
+
+def available_brands():
+    """Brands with at least one quote in the newest reference table.
+
+    Deliberately stricter than available_fuels() and available_years(), which
+    offer everything present in the data: among 7 fuels a dead option goes
+    unnoticed, among ~100 brands it turns the sidebar into a parade of
+    disappointments.
+
+    `models` is the related_name of VehicleModel.brand. No empty order_by() here
+    because this returns whole Brand rows, not values() — Meta.ordering ["name"]
+    is already in the SELECT, so DISTINCT means what it looks like it means.
+    """
+    reference = latest_reference_table()
+    if reference is None:
+        return []
+    return list(
+        Brand.objects.filter(models__model_years__quotes__reference_table=reference).distinct()
+    )
 
 
 def search_models(filters):

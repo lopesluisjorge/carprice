@@ -14,8 +14,10 @@ from crawler.models import ReferenceTable
 from crawler.models import VehicleModel
 
 
-def build_vehicle(brand_code=21, model_code=4712, year=2017, fuel=FuelType.FLEX):
-    brand, _ = Brand.objects.get_or_create(fipe_code=brand_code, defaults={"name": "Fiat"})
+def build_vehicle(
+    brand_code=21, model_code=4712, year=2017, fuel=FuelType.FLEX, brand_name="Fiat"
+):
+    brand, _ = Brand.objects.get_or_create(fipe_code=brand_code, defaults={"name": brand_name})
     vehicle_model, _ = VehicleModel.objects.get_or_create(
         brand=brand, fipe_code=model_code, defaults={"name": "500 Cult 1.4"}
     )
