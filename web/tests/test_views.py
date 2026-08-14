@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.test import TestCase
 from django.urls import NoReverseMatch
 from django.urls import reverse
@@ -128,6 +130,79 @@ class CompareTests(TestCase):
         response = self.client.get(reverse("web:compare"))
         self.assertNotContains(response, 'name="add"')
         self.assertContains(response, "Buscar veículos")
+
+
+class SelectionTrayTests(TestCase):
+    """The tray travels in `c=` so a second pick adds instead of replacing.
+
+    The bug this guards against left every "+ comparar" pointing at
+    `compare?v=<one code>`: each click threw the previous picks away, so the
+    comparison never held more than one version.
+    """
+
+    def setUp(self):
+        self.years = [build_vehicle(model_code=4712, year=2017 + index) for index in range(5)]
+        for index, model_year in enumerate(self.years):
+            add_quote(model_year, 2026, 8, f"{90000 + index}.00")
+        self.codes = [codes.encode(model_year) for model_year in self.years]
+        self.model_code = codes.encode_model(self.years[0].vehicle_model)
+
+    def _model_page(self, tray=()):
+        query = {"m": self.model_code}
+        if tray:
+            query["c"] = ",".join(tray)
+        return self.client.get(reverse("web:model"), query)
+
+    def _toggle_url(self, response, code):
+        versions = {version.code: version for version in response.context["versions"]}
+        return versions[code].toggle_url
+
+    def test_a_second_pick_is_added_not_substituted(self):
+        first = self._model_page()
+        response = self.client.get(self._toggle_url(first, self.codes[0]))
+        self.assertEqual(response.context["selection"], self.codes[0])
+
+        response = self.client.get(self._toggle_url(response, self.codes[1]))
+        self.assertEqual(response.context["selection"], ",".join(self.codes[:2]))
+        self.assertEqual(response.context["selection_count"], 2)
+
+    def test_picking_keeps_the_reader_on_the_model_page(self):
+        response = self.client.get(self._toggle_url(self._model_page(), self.codes[0]))
+        self.assertTemplateUsed(response, "web/model.html")
+
+    def test_picking_the_same_version_again_removes_it(self):
+        response = self.client.get(self._toggle_url(self._model_page(), self.codes[0]))
+        response = self.client.get(self._toggle_url(response, self.codes[0]))
+        self.assertEqual(response.context["selection"], "")
+
+    def test_a_full_tray_offers_no_link_for_the_fifth(self):
+        response = self._model_page(self.codes[:4])
+        self.assertIsNone(self._toggle_url(response, self.codes[4]))
+        # Already picked ones stay clickable, or nothing could be removed.
+        self.assertIsNotNone(self._toggle_url(response, self.codes[0]))
+
+    def test_the_tray_is_cashed_in_as_the_comparison_querystring(self):
+        response = self._model_page(self.codes[:2])
+        expected = urlencode({"v": ",".join(self.codes[:2])})
+        self.assertContains(response, f"{reverse('web:compare')}?{expected}")
+
+    def test_the_search_carries_the_tray_into_the_model_link(self):
+        response = self.client.get(reverse("web:home"), {"c": self.codes[0]})
+        self.assertContains(response, f"c={self.codes[0]}")
+        self.assertContains(response, 'name="c"')
+
+    def test_the_detail_screen_keeps_its_own_v_and_the_tray_apart(self):
+        response = self.client.get(
+            reverse("web:detail"), {"v": self.codes[0], "c": self.codes[1]}
+        )
+        self.assertEqual(response.context["summary"]["model_year"], self.years[0])
+        self.assertEqual(response.context["selection"], self.codes[1])
+        self.assertFalse(response.context["in_tray"])
+
+        response = self.client.get(response.context["toggle_url"])
+        self.assertTemplateUsed(response, "web/detail.html")
+        self.assertEqual(response.context["selection"], ",".join([self.codes[1], self.codes[0]]))
+        self.assertTrue(response.context["in_tray"])
 
 
 class CollectionSchedulingTests(TestCase):

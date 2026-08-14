@@ -12,6 +12,8 @@
         hx-get="{% url 'web:home' %}" hx-target="#results" hx-swap="innerHTML"
         hx-push-url="true" hx-trigger="submit, change from:#filters"
         class="mt-6">
+    {# The tray rides along with the search, so filtering does not empty it. #}
+    {% if selection %}<input type="hidden" name="c" value="{{ selection }}">{% endif %}
     <div class="flex gap-2">
       <input type="search" name="q" value="{{ filters.term }}" placeholder="corsa, uno mille, siena…"
              class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30">

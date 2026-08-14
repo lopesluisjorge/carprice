@@ -8,11 +8,13 @@
   {% if page.has_other_pages %}
     <nav class="mt-6 flex items-center justify-between text-sm">
       {% if previous_url %}
-        <a href="?{{ previous_url }}" class="font-medium text-blue-600 hover:underline">← anteriores</a>
+        <a href="?{{ previous_url }}{% if selection_query %}&{{ selection_query }}{% endif %}"
+           class="font-medium text-blue-600 hover:underline">← anteriores</a>
       {% else %}<span></span>{% endif %}
       <span class="text-slate-500">página {{ page.number }} de {{ page.paginator.num_pages }}</span>
       {% if next_url %}
-        <a href="?{{ next_url }}" class="font-medium text-blue-600 hover:underline">próximos →</a>
+        <a href="?{{ next_url }}{% if selection_query %}&{{ selection_query }}{% endif %}"
+           class="font-medium text-blue-600 hover:underline">próximos →</a>
       {% else %}<span></span>{% endif %}
     </nav>
   {% endif %}
@@ -27,7 +29,8 @@
       {% endif %}
     </p>
     {% if not filters.is_empty %}
-      <a href="{% url 'web:home' %}" class="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">limpar filtros</a>
+      <a href="{% url 'web:home' %}{% if selection_query %}?{{ selection_query }}{% endif %}"
+         class="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">limpar filtros</a>
     {% endif %}
   </div>
 {% endif %}

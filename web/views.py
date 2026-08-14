@@ -1,7 +1,7 @@
 """Screens over the collected FIPE data. Nothing here talks to the FIPE API."""
 
 from django.shortcuts import render
-from django.utils.http import urlencode
+from django.urls import reverse
 
 from crawler.models import FuelType
 from crawler.services import scheduling
@@ -9,9 +9,10 @@ from crawler.services import scheduling
 from web import codes
 from web import queries
 from web import search
+from web import selection
 from web.filters import SearchFilters
 
-MAX_COMPARED = 4
+MAX_COMPARED = selection.MAX_COMPARED
 
 YEAR_OPS = [("gte", "a partir de"), ("eq", "exatamente"), ("lte", "até")]
 FUEL_LABELS = dict(FuelType.choices)
@@ -45,7 +46,14 @@ def _search_context(filters):
 
 def home(request):
     filters = SearchFilters.from_query(request.GET)
+    tray = selection.from_request(request)
     context = _search_context(filters)
+    context |= selection.context(tray)
+    # "limpar" keeps the search itself, only the tray goes.
+    query = filters.querystring()
+    context["selection_clear_url"] = (
+        f"{reverse('web:home')}?{query}" if query else reverse("web:home")
+    )
     # Only a term schedules work: tweaking the fuel or year filter must not
     # queue thousands of FIPE requests. The whole match is scheduled, not just
     # the visible page.
@@ -59,44 +67,75 @@ def home(request):
 
 def model_detail(request):
     vehicle_model = codes.get_model(request.GET.get("m", ""))
+    tray = selection.from_request(request)
     if vehicle_model is None:
         return render(
             request,
             "web/home.html",
-            _search_context(SearchFilters()) | {"message": "Modelo não encontrado."},
+            _search_context(SearchFilters())
+            | selection.context(tray, reverse("web:home"))
+            | {"message": "Modelo não encontrado."},
             status=404,
         )
+
+    back_to_search = request.GET.get("from", "")
+    params = {"m": codes.encode_model(vehicle_model), "from": back_to_search}
+    versions = list(queries.model_versions(vehicle_model))
+    for version in versions:
+        # Toggling keeps the reader on this page: picking four versions of the
+        # same model should not mean four round trips to the comparison screen.
+        version.code = codes.encode(version)
+        version.in_tray = version.code in tray
+        after_toggle = selection.toggled(tray, version.code)
+        version.toggle_url = (
+            None
+            if after_toggle is None
+            else selection.url(reverse("web:model"), after_toggle, params)
+        )
+
     return render(
         request,
         "web/model.html",
         {
             "vehicle_model": vehicle_model,
-            "versions": queries.model_versions(vehicle_model),
+            "versions": versions,
             "reference_table": queries.latest_reference_table(),
-            "back_to_search": request.GET.get("from", ""),
-        },
+            "back_to_search": back_to_search,
+        }
+        | selection.context(tray, reverse("web:model"), params),
     )
 
 
 def detail(request):
     code = request.GET.get("v", "")
     model_year = codes.get(code)
+    tray = selection.from_request(request)
     if model_year is None:
         return render(
             request,
             "web/home.html",
-            _search_context(SearchFilters()) | {"message": "Veículo não encontrado."},
+            _search_context(SearchFilters())
+            | selection.context(tray, reverse("web:home"))
+            | {"message": "Veículo não encontrado."},
             status=404,
         )
 
     summary = queries.summarize(model_year)
+    after_toggle = selection.toggled(tray, code)
     context = {
         "reference_table": queries.latest_reference_table(),
         "code": code,
         "summary": summary,
         "chart_series": [queries.chart_series(summary)],
         "has_history": len(summary["quotes"]) > 1,
+        "in_tray": code in tray,
+        "toggle_url": (
+            None
+            if after_toggle is None
+            else selection.url(reverse("web:detail"), after_toggle, {"v": code})
+        ),
     }
+    context |= selection.context(tray, reverse("web:detail"), {"v": code})
     return render(request, "web/detail.html", context)
 
 
@@ -119,13 +158,9 @@ def compare(request):
         # What the querystring becomes when this card's "remover" is clicked.
         summary["without_me"] = ",".join(code for code in kept if code != summary["code"])
 
-    context = {
+    context = selection.context(kept) | {
         "reference_table": queries.latest_reference_table(),
         "summaries": summaries,
-        "selection": ",".join(kept),
-        "selection_query": urlencode({"v": ",".join(kept)}) if kept else "",
-        "is_full": len(kept) >= MAX_COMPARED,
-        "max_compared": MAX_COMPARED,
         # Transposed here because the table reads one window per row, across
         # vehicles — and a template cannot index a list by a loop variable.
         "variation_rows": [

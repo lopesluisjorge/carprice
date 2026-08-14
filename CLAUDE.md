@@ -227,6 +227,33 @@ Templates de fragmento HTMX ficam em `web/templates/web/partials/` e devolvem s�
 funciona com recarga de página. `hx-push-url` mantém o link copiável, e os filtros voltam
 iguais ao abrir a URL numa aba nova.
 
+### A bandeja da comparação
+
+Sem sessão e sem estado no cliente: o que já foi escolhido viaja na querystring de **toda** tela
+(`web/selection.py`). É isso que mantém o link compartilhável e faz o "+ comparar" funcionar só
+com recarga — mas cobra o preço de que toda tela que oferece o botão precisa repassar a bandeja
+adiante, senão o clique seguinte parte do zero.
+
+**Dois nomes de parâmetro, de propósito:**
+
+- `v` — o que a página **é**: a versão no detalhe, a lista no comparador.
+- `c` — o que a bandeja **carrega**, em todas as outras telas.
+
+Eles colidiriam com um nome só: o detalhe já gasta `v` com a versão que mostra, então uma
+bandeja com o mesmo nome sobrescreveria uma coisa ou outra. O comparador é onde a bandeja é
+descontada, e por isso lê `v`.
+
+Foi exatamente essa falta de repasse que quebrou o comparador antes: a view aceitava `?add=`,
+mas **nenhum template gerava esse parâmetro** — todo botão apontava para `?v=<um código>`, o que
+substituía a seleção em vez de somar, e a comparação nunca passava de uma versão.
+
+Na página do modelo o botão **alterna sem sair da tela** (`selection.toggled` devolve `None`
+quando a bandeja está cheia, e aí o template mostra um botão morto em vez de um link que
+engoliria o clique). Escolher quatro versões do mesmo modelo seria quatro idas e voltas ao
+comparador de outro jeito. A barra da bandeja (`partials/selection_bar.html`, incluída pelo
+`base.html`) existe porque sem ela o clique só recarrega a página sem sinal nenhum de que algo
+aconteceu.
+
 ### Códigos na URL
 
 Dois formatos, distinguidos pela contagem de partes — é isso que impede um resolver como o

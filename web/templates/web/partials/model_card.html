@@ -1,5 +1,5 @@
 {% load formatting %}
-<a href="{% url 'web:model' %}?m={{ card.code }}{% if filters.querystring %}&from={{ filters.querystring|urlencode }}{% endif %}"
+<a href="{% url 'web:model' %}?m={{ card.code }}{% if filters.querystring %}&from={{ filters.querystring|urlencode }}{% endif %}{% if selection_query %}&{{ selection_query }}{% endif %}"
    class="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow-md">
   <p class="text-xs font-medium text-blue-600">{{ card.vehicle_model.brand.name }}</p>
   <h3 class="mt-1 font-semibold text-slate-900">{{ card.vehicle_model.name }}</h3>

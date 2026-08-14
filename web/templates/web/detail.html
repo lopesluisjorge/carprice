@@ -5,7 +5,8 @@
 
 {% block content %}
   {% with model_year=summary.model_year latest=summary.latest %}
-  <a href="{% url 'web:home' %}" class="text-sm font-medium text-slate-500 hover:text-slate-900">← Nova consulta</a>
+  <a href="{% url 'web:home' %}{% if selection_query %}?{{ selection_query }}{% endif %}"
+     class="text-sm font-medium text-slate-500 hover:text-slate-900">← Nova consulta</a>
 
   <section class="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
     <p class="text-sm font-medium text-blue-600">{{ model_year.vehicle_model.brand.name }}</p>
@@ -38,10 +39,21 @@
     </dl>
 
     <div class="mt-6 flex flex-wrap gap-3">
-      <a href="{% url 'web:compare' %}?v={{ code|urlencode }}"
-         class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
-        Comparar com outra versão
-      </a>
+      {% if in_tray %}
+        <a href="{{ toggle_url }}"
+           class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:text-rose-600">
+          Remover da comparação
+        </a>
+      {% elif toggle_url %}
+        <a href="{{ toggle_url }}"
+           class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+          Adicionar à comparação
+        </a>
+      {% else %}
+        <span class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-300">
+          Comparação cheia ({{ max_compared }} versões)
+        </span>
+      {% endif %}
     </div>
   </section>
 

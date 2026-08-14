@@ -19,8 +19,10 @@
         {% url 'web:compare' as compare_url %}
         <a href="{{ home_url }}"
            class="rounded-lg px-3 py-1.5 {% if request.path == home_url %}bg-slate-100 text-slate-900{% else %}text-slate-500 hover:text-slate-900{% endif %}">Consultar</a>
-        <a href="{{ compare_url }}"
-           class="rounded-lg px-3 py-1.5 {% if request.path == compare_url %}bg-slate-100 text-slate-900{% else %}text-slate-500 hover:text-slate-900{% endif %}">Comparar</a>
+        <a href="{{ compare_url }}{% if compare_query %}?{{ compare_query }}{% endif %}"
+           class="rounded-lg px-3 py-1.5 {% if request.path == compare_url %}bg-slate-100 text-slate-900{% else %}text-slate-500 hover:text-slate-900{% endif %}">
+          Comparar{% if selection_count %} <span class="rounded bg-blue-600 px-1.5 py-0.5 text-xs text-white">{{ selection_count }}</span>{% endif %}
+        </a>
       </nav>
     </div>
   </header>
@@ -30,6 +32,10 @@
       <p class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
         {{ message }}
       </p>
+    {% endif %}
+    {# The comparison screen is the tray, so it does not need the bar. #}
+    {% if selection_count and request.path != compare_url %}
+      {% include "web/partials/selection_bar.html" %}
     {% endif %}
     {% block content %}{% endblock %}
   </main>
