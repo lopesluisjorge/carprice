@@ -28,6 +28,17 @@
     <div class="mt-6 grid gap-8 lg:grid-cols-[15rem_1fr]">
       <aside id="filters" class="space-y-6">
         <fieldset>
+          <legend class="text-sm font-medium text-slate-700">Marca</legend>
+          <select name="brand"
+                  class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+            <option value="">todas</option>
+            {% for value, label in brands %}
+              <option value="{{ value }}" {% if filters.brand == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </fieldset>
+
+        <fieldset>
           <legend class="text-sm font-medium text-slate-700">Combustível</legend>
           <div class="mt-2 space-y-1.5">
             {% for code, label in fuels %}
@@ -58,6 +69,35 @@
               {% endfor %}
             </select>
           </div>
+        </fieldset>
+
+        <fieldset>
+          <legend class="text-sm font-medium text-slate-700">Preço</legend>
+          <div class="mt-2 flex gap-2">
+            <select name="price_op"
+                    class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+              {% for value, label in price_ops %}
+                <option value="{{ value }}" {% if filters.price_op == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <select name="price"
+                    class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+              <option value="">qualquer</option>
+              {% for value, label in price_steps %}
+                <option value="{{ value }}" {% if filters.price == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend class="text-sm font-medium text-slate-700">Ordenar por</legend>
+          <select name="sort"
+                  class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+            {% for value, label in sort_options %}
+              <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
         </fieldset>
       </aside>
 

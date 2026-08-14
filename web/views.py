@@ -10,12 +10,38 @@ from web import codes
 from web import queries
 from web import search
 from web import selection
+from web.filters import PRICE_STEPS
 from web.filters import SearchFilters
 
 MAX_COMPARED = selection.MAX_COMPARED
 
 YEAR_OPS = [("gte", "a partir de"), ("eq", "exatamente"), ("lte", "até")]
+# No "exatamente" here: with fixed steps it would match only the exact amount.
+PRICE_OPS = [("gte", "a partir de"), ("lte", "até")]
+SORT_OPTIONS = [
+    ("", "relevância"),
+    ("price_asc", "menor preço"),
+    ("price_desc", "maior preço"),
+]
 FUEL_LABELS = dict(FuelType.choices)
+
+
+def _price_label(value):
+    """R$ 50 mil — the full "R$ 50.000,00" only clutters a narrow select. A value
+    that came from a hand-written URL keeps its digits, so it is never rounded
+    into a lie."""
+    if value % 1000 == 0:
+        return f"R$ {value // 1000} mil"
+    return f"R$ {value:,}".replace(",", ".")
+
+
+def _price_steps(current):
+    """The fixed steps, plus whatever arrived in the URL if it is not one of
+    them: a shared link has to come back showing what it was sharing."""
+    steps = list(PRICE_STEPS)
+    if current is not None and current not in steps:
+        steps.append(current)
+    return [(value, _price_label(value)) for value in sorted(steps)]
 
 
 def _search_context(filters):
@@ -33,7 +59,13 @@ def _search_context(filters):
             for code in queries.available_fuels()
         ],
         "years": queries.available_years(),
+        "brands": [
+            (codes.encode_brand(brand), brand.name) for brand in queries.available_brands()
+        ],
         "year_ops": YEAR_OPS,
+        "price_ops": PRICE_OPS,
+        "price_steps": _price_steps(filters.price),
+        "sort_options": SORT_OPTIONS,
         "previous_url": (
             filters.querystring(page=page.previous_page_number()) if page.has_previous() else ""
         ),

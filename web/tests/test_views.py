@@ -57,6 +57,21 @@ class SearchScreenTests(TestCase):
                 with self.assertRaises(NoReverseMatch):
                     reverse(name)
 
+    def test_the_sidebar_offers_the_new_controls(self):
+        response = self.client.get(reverse("web:home"))
+        for field in ['name="brand"', 'name="price_op"', 'name="price"', 'name="sort"']:
+            with self.subTest(field=field):
+                self.assertContains(response, field)
+
+    def test_a_price_outside_the_steps_is_offered_back(self):
+        # Sem isso a URL compartilhada mostraria um filtro diferente do que pede.
+        response = self.client.get(reverse("web:home"), {"price": "43500"})
+        self.assertContains(response, "R$ 43.500")
+
+    def test_the_round_steps_are_labelled_short(self):
+        response = self.client.get(reverse("web:home"))
+        self.assertContains(response, "R$ 50 mil")
+
 
 class DetailTests(TestCase):
     def setUp(self):
