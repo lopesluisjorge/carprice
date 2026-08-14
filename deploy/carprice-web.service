@@ -1,0 +1,50 @@
+# CarPrice web (gunicorn). Install with:
+#     sudo cp deploy/carprice-web.service /etc/systemd/system/
+#     sudo systemctl daemon-reload && sudo systemctl enable --now carprice-web
+[Unit]
+Description=CarPrice web (gunicorn)
+Documentation=file:///srv/carprice/docs/deploy.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+# Gunicorn speaks the systemd protocol when NOTIFY_SOCKET is set, so systemd
+# waits for the workers to be up before reporting the unit started.
+Type=notify
+User=carprice
+Group=carprice
+WorkingDirectory=/srv/carprice
+EnvironmentFile=/etc/carprice/env
+
+ExecStart=/srv/carprice/venv/bin/gunicorn \
+    --config /srv/carprice/deploy/gunicorn.conf.py \
+    carprice.wsgi:application
+# Graceful reload: finishes in-flight requests, then reloads the code. This is
+# what a deploy uses, so nobody sees a connection refused.
+ExecReload=/bin/kill -s HUP $MAINPID
+KillSignal=SIGTERM
+
+Restart=on-failure
+RestartSec=5s
+
+# /run/carprice, created at start and owned by the service user. Used only if
+# gunicorn is switched to a unix socket.
+RuntimeDirectory=carprice
+RuntimeDirectoryMode=0750
+
+# Hardening. ProtectSystem=strict leaves the whole tree read-only, /srv/carprice
+# included — which also means Python cannot write __pycache__ there, so the
+# deploy runs compileall instead (see deploy/update.sh).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

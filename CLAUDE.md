@@ -18,9 +18,11 @@ mostra apenas o mês vigente, aqui guardamos todos os meses coletados.
 ## Stack
 
 - Django 6.1, Python 3.14 (venv em `./venv`)
-- **Três dependências, e só.** `django-environ` (lê `DATABASE_URL`) e `psycopg` (driver do
-  Postgres) além do Django. O cliente HTTP continua usando `urllib` da stdlib e os testes, o
-  runner do Django. Se `requests` for instalado, a troca se resume a `FipeClient._post`.
+- **Cinco dependências, e só** (`requirements.in`, fixadas em `requirements.txt` pelo
+  `pip-compile`): `django-environ` (lê o ambiente), `psycopg` (driver do Postgres), `gunicorn` e
+  `whitenoise` (as duas só de produção) além do Django. O cliente HTTP continua usando `urllib`
+  da stdlib e os testes, o runner do Django. Se `requests` for instalado, a troca se resume a
+  `FipeClient._post`.
 - **Postgres em produção e no desenvolvimento local, num container** (`compose.yml`). O
   `DATABASE_URL` decide, e o default das settings já aponta para o container — `docker compose
   up -d` é o setup inteiro.
@@ -395,12 +397,13 @@ coleta é esparsa, o mês exato pode não existir) e devolve qual mês usou, par
 
 ```bash
 source venv/bin/activate.fish     # o shell do usuário é fish
+cp .env.example .env              # uma vez por máquina: é o que liga o DEBUG
 docker compose up -d              # Postgres; o default das settings já aponta para ele
 python manage.py runserver
 python manage.py migrate
 python manage.py test              # crawler + web; nenhum teste toca a rede
 ruff check . && ruff format .
-./tailwindcss -i web/static/web/src/input.css -o web/static/web/app.css --watch
+./tailwindcss -i web/tailwind/input.css -o web/static/web/app.css --watch
 ```
 
 ### Banco
@@ -433,7 +436,7 @@ você renomear o binário para `tailwindcss`, os comandos abaixo continuam valen
 # Tailwind: binário standalone (v4, que é a sintaxe usada em input.css)
 curl -sL -o tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
 chmod +x tailwindcss
-./tailwindcss -i web/static/web/src/input.css -o web/static/web/app.css --minify
+./tailwindcss -i web/tailwind/input.css -o web/static/web/app.css --minify
 
 # JS de terceiros -> web/static/vendor/
 curl -sL -o web/static/vendor/htmx.min.js       https://unpkg.com/htmx.org@2.0.10/dist/htmx.min.js
@@ -442,6 +445,36 @@ curl -sL -o web/static/vendor/apexcharts.min.js https://unpkg.com/apexcharts@5.1
 
 Alpine.js continua no stack, mas nenhuma tela precisa de estado de UI ainda — quando precisar,
 baixe `alpinejs@3/dist/cdn.min.js` como `vendor/alpine.min.js` e carregue **depois** do HTMX.
+
+`web/tailwind/input.css` mora **fora** de `web/static/` de propósito: é entrada de build, não
+asset servido. Dentro do `static/` o `collectstatic` o copiaria e o storage com manifesto
+tentaria resolver `@import "tailwindcss"` como URL — o deploy quebrava ali.
+
+## Deploy
+
+Runbook completo em [`docs/deploy.md`](docs/deploy.md); os arquivos em `deploy/`. VPS com
+systemd, sem Docker para a aplicação — o `compose.yml` continua sendo só de desenvolvimento.
+
+**Nenhum valor de produção mora no código.** `DEBUG` nasce `False`, e com ele desligado
+`SECRET_KEY` e `ALLOWED_HOSTS` **não têm default**: faltando qualquer um, a aplicação se recusa a
+subir com uma mensagem dizendo qual. É o oposto do default conveniente que o `DATABASE_URL` tem,
+e de propósito — máquina não configurada deve parar de pé, não servir traceback. Em
+desenvolvimento quem religa o `DEBUG` é o `.env` (`cp .env.example .env`).
+
+Três processos no servidor, e a fronteira entre dois deles é a que não dá para improvisar:
+
+- `carprice-web` (gunicorn) — a aplicação, que **só lê o banco**;
+- `carprice-worker` (`process_crawl_queue --forever`) — o **único** que fala com a FIPE, e que
+  precisa ser um só na infraestrutura inteira: a cota de 40 req/min vive na janela deslizante em
+  memória de um `FipeClient`. O `flock` protege contra um segundo processo na mesma máquina, não
+  contra uma segunda máquina;
+- nginx — TLS, estáticos e proxy.
+
+`SECURE_HSTS_SECONDS` fica em `0` até o HTTPS estar confirmado, então `check --deploy` sai com
+`security.W004` num primeiro deploy — é o único aviso esperado. `docs/deploy.md` tem a rampa.
+
+O `mail.E001` é silenciado enquanto `EMAIL_HOST` estiver vazio: nada na aplicação manda e-mail
+hoje. Definir `EMAIL_HOST` troca para SMTP e devolve o check.
 
 ## Testes
 
@@ -477,6 +510,14 @@ busca. Para testar com caso real use "siena", "uno" ou "aircross".
 Os combustíveis 6 (Híbrido) e 7 (Tetrafuel) já foram nomeados; o próximo código desconhecido
 volta a aparecer como número cru, que é o comportamento desejado.
 
-`TIME_ZONE` é `America/Sao_Paulo` e `LANGUAGE_CODE` já virou `pt-br`. Pendências conhecidas:
-`SECRET_KEY` está no `settings.py`, `ALLOWED_HOSTS` está vazio, e `ruff` não está instalado no
-venv (o comando do check não roda).
+`TIME_ZONE` é `America/Sao_Paulo` e `LANGUAGE_CODE` já virou `pt-br`. `SECRET_KEY` e
+`ALLOWED_HOSTS` saíram do código e agora vêm do ambiente.
+
+**Nada disso roda antes de `pip install -r requirements.txt`**: `gunicorn` e `whitenoise` entraram
+no `requirements.txt` mas não estão no venv, e o `whitenoise` está no `MIDDLEWARE` — sem ele nem a
+suíte passa. `ruff` está em `requirements-dev.txt`, também não instalado (o comando do check não
+roda).
+
+A aplicação nunca foi implantada de verdade: `docs/deploy.md` foi verificado no que dá para
+verificar de fora (`check --deploy` limpo, `collectstatic` com manifesto, suíte nos dois engines,
+sintaxe do `update.sh`), mas as unidades do systemd e o nginx ainda não rodaram numa VPS.

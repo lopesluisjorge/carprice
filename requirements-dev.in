@@ -1,0 +1,6 @@
+# Development-only tooling, on top of requirements.in. Compile with:
+#     pip-compile requirements-dev.in
+-c requirements.txt
+
+pip-tools             # pip-compile itself
+ruff                  # lint + format

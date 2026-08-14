@@ -1,0 +1,9 @@
+/* Tailwind build input. It lives outside web/static/ on purpose: collectstatic
+   would otherwise copy it and the manifest storage would try to resolve
+   `@import "tailwindcss"` as a URL, which fails — it is a build input, never a
+   served asset. The output goes to web/static/web/app.css. */
+@import "tailwindcss";
+
+/* The binary is run from the repo root, so point the class scan at the
+   templates explicitly instead of relying on the working directory. */
+@source "../templates/**/*.html";

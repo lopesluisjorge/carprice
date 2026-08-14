@@ -1,0 +1,12 @@
+# Direct dependencies. Compile the pinned set with:
+#     pip-compile requirements.in
+#
+# Runtime, in the order they matter:
+Django==6.1
+django-environ        # reads DATABASE_URL and the rest of the environment
+psycopg[binary]       # Postgres driver; the binary wheel avoids a build toolchain
+gunicorn              # WSGI server (the systemd unit runs this, never runserver)
+whitenoise            # hashed, compressed static files served by the app itself
+
+# The FIPE client is stdlib urllib on purpose, and the tests are the Django
+# runner: neither adds anything here.

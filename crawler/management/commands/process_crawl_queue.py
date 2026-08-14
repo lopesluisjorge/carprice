@@ -13,7 +13,9 @@ from crawler.fipe import FipeClient, FipeError
 from crawler.fipe.client import DEFAULT_REQUESTS_PER_MINUTE
 from crawler.services import collecting
 
-LOCK_PATH = Path(settings.BASE_DIR) / ".crawl_queue.lock"
+# Settings-driven so the deployed tree can stay read-only and the lock can live
+# in /run, where a runtime lock belongs. Defaults to BASE_DIR for development.
+LOCK_PATH = Path(settings.CRAWL_QUEUE_LOCK_PATH)
 
 
 class Command(BaseCommand):

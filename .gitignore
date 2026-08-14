@@ -14,3 +14,6 @@ __pycache__
 # Tailwind standalone binary, downloaded per machine (see CLAUDE.md).
 # Glob because the release asset keeps its platform suffix: tailwindcss-linux-x64.
 /tailwindcss*
+
+# collectstatic output: a build product, rebuilt on every deploy.
+/staticfiles/

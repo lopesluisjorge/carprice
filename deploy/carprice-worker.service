@@ -1,0 +1,56 @@
+# CarPrice on-demand collection worker. Install with:
+#     sudo cp deploy/carprice-worker.service /etc/systemd/system/
+#     sudo systemctl daemon-reload && sudo systemctl enable --now carprice-worker
+#
+# Without this unit running, nothing is ever collected: the search only writes
+# the request. And there must be exactly one of it — the FIPE quota lives in the
+# sliding window of a single FipeClient, so two workers would mean 80 req/min
+# and a stream of 429s. systemd gives one instance per unit; the flock on
+# CRAWL_QUEUE_LOCK_PATH catches a second one started by hand.
+[Unit]
+Description=CarPrice on-demand collection worker
+Documentation=file:///srv/carprice/docs/deploy.md
+After=network-online.target postgresql.service carprice-web.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=carprice
+Group=carprice
+WorkingDirectory=/srv/carprice
+EnvironmentFile=/etc/carprice/env
+
+ExecStart=/srv/carprice/venv/bin/python manage.py process_crawl_queue --forever
+
+# always, not on-failure: a FIPE outage exits non-zero and a clean stop should
+# still come back. A minute between tries — the API is rate limited anyway, and
+# there is no point hammering it after a failure.
+Restart=always
+RestartSec=60s
+
+# The worker holds the lock for a whole pass and can be mid-request when asked
+# to stop. Give it room to finish rather than killing it into an inconsistent
+# CrawlRun.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+# /var/lib/carprice, persistent and writable: this is where the single-worker
+# lock file lives (CRAWL_QUEUE_LOCK_PATH). A RuntimeDirectory would be wrong —
+# systemd deletes it when the unit stops, and then a manual run of
+# process_crawl_queue would have nowhere to create the lock.
+StateDirectory=carprice
+StateDirectoryMode=0750
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
