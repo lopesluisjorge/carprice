@@ -148,3 +148,23 @@ class SearchModelsTests(TestCase):
         # estreitar para nada por acidente.
         page = queries.search_models(SearchFilters(brand="lixo"))
         self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {1, 2})
+
+    def test_price_sorting_reads_each_end_of_the_range(self):
+        # 28k–90k contra 30k–35k é o único par que denuncia a chave errada:
+        # por min_value o primeiro vem antes, por max_value também — mas se as
+        # direções trocarem de chave, a ordem inverte.
+        for year, value in [(2015, "28000.00"), (2016, "90000.00")]:
+            wide = build_vehicle(brand_code=13, model_code=7, year=year, brand_name="Citroën")
+            add_quote(wide, 2026, 8, value)
+        for year, value in [(2015, "30000.00"), (2016, "35000.00")]:
+            narrow = build_vehicle(brand_code=13, model_code=8, year=year, brand_name="Citroën")
+            add_quote(narrow, 2026, 8, value)
+
+        def codes_for(sort):
+            page = queries.search_models(SearchFilters(brand="1-13", sort=sort))
+            return [card["vehicle_model"].fipe_code for card in page]
+
+        # 28.000 antes de 30.000; por max_value daria [8, 7].
+        self.assertEqual(codes_for("price_asc"), [7, 8])
+        # 90.000 antes de 35.000; por min_value daria [8, 7].
+        self.assertEqual(codes_for("price_desc"), [7, 8])

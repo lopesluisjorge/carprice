@@ -25,6 +25,15 @@ VARIATION_WINDOWS = [3, 6, 12]
 
 PER_PAGE = 24
 
+# Ordering by an annotation is safe: unlike a model field, it never joins the
+# GROUP BY. Each direction reads the end of the range the reader is looking at.
+# The model id breaks ties so two identical queries cannot come back in
+# different orders and make the paginator repeat one card and hide another.
+SORT_ORDERS = {
+    "price_asc": ["min_value", "model_year__vehicle_model"],
+    "price_desc": ["-max_value", "model_year__vehicle_model"],
+}
+
 
 def period(reference_table):
     """A reference table as a single comparable number of months."""
@@ -122,7 +131,12 @@ def search_models(filters):
         .order_by()
     )
 
-    if ranked_ids is None:
+    if filters.sort:
+        # Asked for price, not for relevance: the sort replaces the ranking.
+        page = Paginator(rows.order_by(*SORT_ORDERS[filters.sort]), PER_PAGE).get_page(
+            filters.page
+        )
+    elif ranked_ids is None:
         rows = rows.order_by(
             "model_year__vehicle_model__brand__name", "model_year__vehicle_model__name"
         )
