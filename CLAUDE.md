@@ -221,7 +221,8 @@ fora do catálogo gravado e os testes passariam sem coletar nada.
 
 ## Web
 
-- Busca full-text (`/?q=corsa`), com filtros de combustível e ano ao lado e cards embaixo.
+- Busca full-text (`/?q=corsa`), com filtros de marca, combustível, ano e preço ao lado, ordenação
+  por preço e cards embaixo.
 - Página do modelo (`/modelo/?m=1-21-4712`): todas as versões daquele modelo, com preço.
 - Detalhe da versão (`/veiculo/?v=code`): valor atual, variação 3/6/12 meses, gráfico do histórico.
 - Comparador de até 4 versões (`/comparar/?v=code1,code2`), estado na querystring — link compartilhável.
@@ -262,11 +263,12 @@ aconteceu.
 
 ### Códigos na URL
 
-Dois formatos, distinguidos pela contagem de partes — é isso que impede um resolver como o
+Três formatos, distinguidos pela contagem de partes — é isso que impede um resolver como o
 outro:
 
 - versão (5 partes): `tipo-marca-modelo-ano-combustível` → `1-21-4712-2017-5`
 - modelo (3 partes): `tipo-marca-modelo` → `1-21-4712`
+- marca (2 partes): `tipo-marca` → `1-21`
 
 Montados com códigos da FIPE e não com PKs, para o link continuar valendo em outro banco. O tipo
 de veículo vai na frente porque a FIPE numera marcas por tipo — a marca 21 de carro não é a
@@ -355,6 +357,29 @@ existiu em mês nenhum. A contagem no card é de **versões** (ano *e* combustí
 
 O 0 km (ano 32000) vale como o ano mais novo: `>=` inclui, `<=` e `=` excluem. Isso é a
 comparação numérica crua, sem código especial.
+
+**Preço estreita as cotações, não os anos/modelo**, porque `value` mora em `PriceQuote`. Um
+modelo aparece se tiver **ao menos uma versão** na faixa, e a faixa e a contagem do card passam a
+descrever só as versões que casaram — igual ao que combustível e ano já fazem. Então "até 30 mil"
+pode mostrar `R$ 28.000 – R$ 30.000` de um modelo que também tem uma versão de 90 mil, e isso é o
+comportamento certo para "o que cabe no meu orçamento".
+
+O filtro de preço não tem "exatamente", ao contrário do de ano: com degraus fixos ele casaria só
+com o valor cravado e pareceria defeito. O default do operador também difere — ano é "a partir
+de", preço é "até", porque preço se procura por teto de orçamento.
+
+Um valor de preço fora dos degraus, digitado na URL, **é honrado e devolvido como opção extra do
+select**. Descartá-lo quebraria a promessa de que os filtros voltam iguais ao abrir a URL numa
+aba nova.
+
+**A ordenação por preço substitui a relevância** enquanto estiver ativa: quem escolheu "menor
+preço" pediu preço. Crescente lê `min_value`, decrescente lê `-max_value` — cada direção pela
+ponta da faixa que a pessoa está olhando —, e as duas desempatam pelo id do modelo, senão empate
+de preço faz o paginador repetir um card e esconder outro.
+
+`available_brands()` é mais estrita que `available_fuels()` e `available_years()`: só oferece
+marca que tem cotação no mês vigente. Entre 7 combustíveis uma opção morta passa despercebida;
+entre ~100 marcas ela vira uma lista de decepções.
 
 A página do modelo **ignora os filtros da busca**: a URL dela é compartilhável e não pode
 mostrar coisas diferentes conforme o caminho que levou até ela.
