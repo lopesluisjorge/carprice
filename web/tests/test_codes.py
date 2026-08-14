@@ -37,3 +37,23 @@ class ModelCodeTests(TestCase):
         for code in ["", "abc", "1-21", "1-21-4712-2017", "1-21-x"]:
             with self.subTest(code=code):
                 self.assertIsNone(codes.get_model(code))
+
+
+class BrandCodeTests(TestCase):
+    def test_round_trip(self):
+        model_year = build_vehicle()
+        brand = model_year.vehicle_model.brand
+        code = codes.encode_brand(brand)
+        self.assertEqual(code, "1-21")
+        self.assertEqual(codes.get_brand(code), brand)
+
+    def test_the_other_codes_are_not_brand_codes(self):
+        # A contagem de partes é o que impede um código de resolver como outro.
+        model_year = build_vehicle()
+        self.assertIsNone(codes.get_brand(codes.encode_model(model_year.vehicle_model)))
+        self.assertIsNone(codes.get_brand(codes.encode(model_year)))
+
+    def test_malformed_codes_resolve_to_nothing(self):
+        for code in ["", "abc", "1", "1-21-4712", "1-x"]:
+            with self.subTest(code=code):
+                self.assertIsNone(codes.get_brand(code))
