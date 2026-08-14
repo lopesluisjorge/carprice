@@ -1,5 +1,8 @@
 *.sqlite3
 
+# Local settings: credentials and DATABASE_URL. See .env.example.
+.env
+
 venv
 .venv
 

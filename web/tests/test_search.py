@@ -23,6 +23,40 @@ class BuildMatchQueryTests(TestCase):
                 self.assertEqual(search.build_match_query(term), "")
 
 
+class BuildTsqueryTests(TestCase):
+    """The Postgres half of the same contract, token for token.
+
+    Both dialects are built from the same tokenizer, so the two classes assert
+    the same rules twice — on purpose: a change to tokenize() that broke one
+    engine and not the other would otherwise only show up on the engine that
+    happens to be running the suite.
+    """
+
+    def test_each_token_gets_a_prefix_match_joined_by_and(self):
+        self.assertEqual(search.build_tsquery("corsa sedan"), "corsa:* & sedan:*")
+
+    def test_drops_single_char_tokens_when_a_longer_one_exists(self):
+        self.assertEqual(search.build_tsquery("gol 1.0"), "gol:*")
+
+    def test_keeps_a_single_char_term_when_it_is_all_there_is(self):
+        self.assertEqual(search.build_tsquery("c"), "c:*")
+
+    def test_input_without_any_word_produces_no_query(self):
+        for term in ["", "   ", '"', "*", "((", "...", None]:
+            with self.subTest(term=term):
+                self.assertEqual(search.build_tsquery(term), "")
+
+    def test_tsquery_operators_never_survive_the_tokenizer(self):
+        # & | ! : ( ) and <-> are to tsquery what AND and * are to FTS5.
+        for term in ["a & b", "a | b", "!a", "a <-> b", "a:*", "(a)"]:
+            with self.subTest(term=term):
+                built = search.build_tsquery(term)
+                self.assertNotIn("|", built)
+                self.assertNotIn("!", built)
+                self.assertNotIn("<", built)
+                self.assertNotIn("(", built)
+
+
 class SearchTests(TestCase):
     def setUp(self):
         citroen = Brand.objects.create(fipe_code=13, name="Citroën")

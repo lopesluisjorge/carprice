@@ -18,9 +18,15 @@ mostra apenas o mês vigente, aqui guardamos todos os meses coletados.
 ## Stack
 
 - Django 6.1, Python 3.14 (venv em `./venv`)
-- **Zero dependências além do Django.** O cliente HTTP usa `urllib` da stdlib e os testes usam o
+- **Três dependências, e só.** `django-environ` (lê `DATABASE_URL`) e `psycopg` (driver do
+  Postgres) além do Django. O cliente HTTP continua usando `urllib` da stdlib e os testes, o
   runner do Django. Se `requests` for instalado, a troca se resume a `FipeClient._post`.
-- SQLite hoje; `DATABASE_URL` via `django-environ` para migrar a Postgres sem refatorar
+- **Postgres em produção e no desenvolvimento local, num container** (`compose.yml`). O
+  `DATABASE_URL` decide, e o default das settings já aponta para o container — `docker compose
+  up -d` é o setup inteiro.
+- **SQLite continua suportado**, não como legado: é o caminho de rodar a suíte sem container
+  nenhum (`DATABASE_URL=sqlite:///db.sqlite3`). Os mesmos testes valem nos dois engines, e é
+  isso que impede um deles de apodrecer sem ninguém perceber.
 - Front: templates Django + HTMX (fragmentos) + Alpine.js (estado leve de UI)
 - Tailwind pelo **binário standalone** — sem npm, sem `node_modules`
 - Gráficos: ApexCharts
@@ -268,25 +274,65 @@ mesma de moto.
 
 ### Busca
 
-`web/search.py` é o **único lugar com SQL cru** do projeto. Quem chama pede ids ranqueados e
-nunca vê `MATCH` nem `bm25`; migrar para Postgres é reescrever esse módulo e uma migração, não
-as telas.
+`web/search.py` é o **único lugar com SQL cru** do projeto, e o único que sabe em qual banco
+está rodando. Quem chama pede ids ranqueados e nunca vê `MATCH`, `bm25`, `tsquery` ou `ts_rank`.
 
-Três armadilhas que já custaram tempo e não devem ser "simplificadas":
+**Dois dialetos, um significado.** `connection.vendor` escolhe o ramo; a migração
+`web/migrations/0001` monta o índice equivalente em cada engine:
 
-- **A tabela FTS5 é autônoma, não `content='crawler_vehiclemodel'`.** `brand` é FK lá, não
-  coluna: com external content o FTS5 emitiria `SELECT name, brand FROM crawler_vehiclemodel` e
-  falharia.
+| | SQLite | Postgres |
+|---|---|---|
+| índice | tabela virtual FTS5 | tabela com coluna `tsvector` + GIN |
+| prefixo | `"corsa"*` | `corsa:*` |
+| E lógico | `AND` | `&` |
+| acento | tokenizer `remove_diacritics 2` | configuração `simple_unaccent` |
+| ranking | `bm25(...)`, menor é melhor | `ts_rank(..., 1)`, maior é melhor |
+| peso nome/marca | 10 : 1 nos argumentos do `bm25` | rótulos `A`/`B` no vetor, pesos no `ts_rank` |
+| desempate | `, rowid` | `, rowid` |
+
+A configuração de texto é `simple`, não `portuguese`: nome de modelo não é prosa, e radicalizar
+"Mille" ou "TETRAFUEL" como palavra portuguesa só distorceria.
+
+**O acento sai na configuração, não na chamada.** `simple_unaccent` é `simple` mais o dicionário
+`unaccent`, e o `to_tsvector` e o `to_tsquery` rodam os mesmos dicionários — então nomear a
+configuração tira o acento dos dois lados de uma vez, que é exatamente o que o
+`remove_diacritics 2` faz do lado do FTS5. Chamar `unaccent()` inline funcionaria, mas teria de
+ser repetido em todo lugar, e `unaccent()` é STABLE: nunca poderia entrar numa expressão de
+índice, nem numa coluna gerada.
+
+**Coluna gerada não serve aqui**, por sinal: ela só enxerga a própria linha, e o índice precisa
+do nome da marca, que está em outra tabela. É por isso que são triggers nos dois engines, e não
+`GENERATED ALWAYS AS`.
+
+O `, rowid` no fim das duas ordenações não é enfeite: com empate de ranking a ordem entre duas
+consultas idênticas pode variar, e aí o paginador mostra um modelo duas vezes e outro nenhuma.
+
+A normalização `1` do `ts_rank` (dividir por `1 + log(comprimento)`) existe para aproximar o
+comportamento do bm25, que já corrige por comprimento sozinho — sem ela, nome comprido ganha de
+nome curto só por ter mais palavras.
+
+Armadilhas que já custaram tempo e não devem ser "simplificadas":
+
+- **A tabela do índice é autônoma nos dois engines**, não `content='crawler_vehiclemodel'` nem
+  uma coluna naquela tabela. `brand` é FK lá, não coluna: com external content o FTS5 emitiria
+  `SELECT name, brand FROM crawler_vehiclemodel` e falharia, e de todo jeito o índice precisa do
+  *nome* da marca, que está a um join de distância.
 - **Existe trigger em `crawler_brand`.** O `sync.py` faz `update_or_create` na marca justamente
   para corrigir rename da FIPE; sem esse trigger o índice serviria o nome antigo. Triggers em
   vez de signals porque valem para qualquer escrita — um `bulk_create` futuro não dispara
   signal e dispara trigger.
-- **`RunSQL` recebe uma lista.** O driver `sqlite3` roda um comando por `execute()`; uma string
-  com vários `CREATE` aplicaria só o primeiro, em silêncio.
+- **Um comando por `execute()`.** O driver `sqlite3` roda só o primeiro de uma string com vários
+  `CREATE`, em silêncio. Por isso a migração é uma lista de statements, e não um blob, mesmo no
+  ramo do Postgres.
+- **A migração usa `RunPython`, não `RunSQL`**, porque `RunSQL` não sabe ramificar por engine. O
+  `schema_editor.execute(..., params=None)` é o que impede o driver de tentar interpretar `%`
+  como placeholder.
 
-O termo do usuário vira literal entre aspas com prefixo (`corsa` → `"corsa"*`), o que neutraliza
-`AND`, `-`, `*` e `((` digitados. Acento não precisa de tratamento: o tokenizer
-`remove_diacritics 2` processa índice e consulta, então "citroen" acha "Citroën".
+**A defesa contra entrada hostil é o tokenizer, não o escape.** Um token é só letras e dígitos
+(`[^\W_]+`), então `AND`, `-`, `*` e `((` do FTS5 e `&`, `|`, `!`, `:` e `<->` do `tsquery`
+nunca chegam à consulta como sintaxe — em nenhum dos dois ramos. As aspas do FTS5 e o `:*` do
+Postgres vêm por cima disso. `tokenize()` é compartilhada de propósito: os testes cobrem os dois
+dialetos lado a lado, senão uma mudança nela quebraria o engine que não está rodando a suíte.
 
 ### Filtros e cards
 
@@ -321,12 +367,31 @@ coleta é esparsa, o mês exato pode não existir) e devolve qual mês usou, par
 
 ```bash
 source venv/bin/activate.fish     # o shell do usuário é fish
+docker compose up -d              # Postgres; o default das settings já aponta para ele
 python manage.py runserver
 python manage.py migrate
 python manage.py test              # crawler + web; nenhum teste toca a rede
 ruff check . && ruff format .
 ./tailwindcss -i web/static/web/src/input.css -o web/static/web/app.css --watch
 ```
+
+### Banco
+
+O `compose.yml` sobe só o Postgres — o Django continua rodando no venv do host. A porta é
+publicada em `127.0.0.1`, então nada fica exposto na rede, e as credenciais default
+(`carprice`/`carprice`) são de desenvolvimento.
+
+**Rode a suíte nos dois engines antes de mexer na busca ou em migração.** É o único jeito de
+saber que a compatibilidade continua real:
+
+```bash
+python manage.py test                                    # Postgres (o default)
+DATABASE_URL=sqlite:///db.sqlite3 python manage.py test   # SQLite, sem container
+```
+
+Trocar o `DATABASE_URL` troca de banco, não migra os dados: cada engine tem o seu. Para levar o
+banco de desenvolvimento de um para o outro é `dumpdata` no antigo e `loaddata` no novo, com o
+`migrate` já rodado no destino.
 
 ### Setup do front (uma vez por máquina)
 
@@ -358,17 +423,25 @@ afirmarem sobre o tráfego. Ao adicionar um endpoint, grave a fixture correspond
 
 Os testes da `web` (pacote `web/tests/`, com os construtores em `factories.py`) montam os dados
 na mão e cobrem o que quebra em silêncio:
-round-trip dos dois códigos, o fallback de mês da variação, a sintaxe do FTS5 (inclusive
-entrada hostil), os triggers do índice exercitados pelo ORM e o limite de 4 no comparador.
+round-trip dos dois códigos, o fallback de mês da variação, a sintaxe dos dois dialetos de busca
+(inclusive entrada hostil), os triggers do índice exercitados pelo ORM, o limite de 4 no
+comparador e o repasse da bandeja entre as telas.
+
+Os testes de busca que tocam o banco (`SearchTests`, `TriggerTests`) são **o teste de
+compatibilidade entre engines**: são os mesmos asserts nos dois, e é rodá-los em Postgres e em
+SQLite que prova que os dois ramos de `search.py` querem dizer a mesma coisa.
 
 ## Estado atual
 
 O crawler está implementado e verificado contra a API real. A `web` tem busca full-text, página
 do modelo, detalhe e comparador funcionando; falta o ranking de altas e quedas.
 
-O banco de desenvolvimento tem **um único mês** (08/2026) e 5 marcas com preços (Fiat, GM,
-BYD, Citroën, GEELY) — por isso as telas foram feitas para o caso sem histórico. Para ver
-gráfico e variação de verdade, colete um segundo mês: `crawl_fipe --reference 2026-07 --brand 21`.
+**Os dados de desenvolvimento ainda estão no `db.sqlite3`.** O Postgres do compose nasce vazio;
+até rodar `dumpdata`/`loaddata`, as telas apontando para ele não mostram veículo nenhum.
+
+Esse banco SQLite tem **um único mês** (08/2026) e 5 marcas com preços (Fiat, GM, BYD, Citroën,
+GEELY) — por isso as telas foram feitas para o caso sem histórico. Para ver gráfico e variação
+de verdade, colete um segundo mês: `crawl_fipe --reference 2026-07 --brand 21`.
 
 A coleta da GM parou no "AGILE", então **"corsa" não devolve nada ainda** — não é falha da
 busca. Para testar com caso real use "siena", "uno" ou "aircross".

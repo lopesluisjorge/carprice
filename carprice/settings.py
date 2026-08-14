@@ -12,8 +12,15 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 
+import environ
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+env = environ.Env()
+# Optional: production passes DATABASE_URL through the environment instead.
+if (BASE_DIR / '.env').exists():
+    environ.Env.read_env(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -74,11 +81,15 @@ WSGI_APPLICATION = 'carprice.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+# Postgres in development and in production; the default matches compose.yml, so
+# `docker compose up -d` is the whole local setup. SQLite is still supported —
+# `DATABASE_URL=sqlite:///db.sqlite3` runs the suite with no container at all —
+# and both engines are exercised by the same tests.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': env.db_url(
+        'DATABASE_URL',
+        default='postgres://carprice:carprice@127.0.0.1:5432/carprice',
+    )
 }
 
 
