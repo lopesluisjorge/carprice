@@ -158,6 +158,53 @@ class PriceQuote(models.Model):
         return f"{self.model_year} — {self.reference_table}: {self.value}"
 
 
+class QuoteLookupStatus(models.IntegerChoices):
+    CREATED = 1, "Criada"
+    UPDATED = 2, "Atualizada"
+    NOT_FOUND = 3, "Sem cotação"
+
+
+class QuoteLookup(models.Model):
+    """What the last price request for one ModelYear in one ReferenceTable did.
+
+    One row per pair, written only once the request resolves. NOT_FOUND is the
+    part PriceQuote cannot express: FIPE lists year/fuel combinations it refuses
+    to price, and without this row an absent quote and a never-asked pair look
+    exactly alike.
+    """
+
+    model_year = models.ForeignKey(
+        ModelYear, on_delete=models.CASCADE, related_name="lookups", verbose_name="ano/modelo"
+    )
+    reference_table = models.ForeignKey(
+        ReferenceTable,
+        on_delete=models.CASCADE,
+        related_name="lookups",
+        verbose_name="tabela de referência",
+    )
+    status = models.PositiveSmallIntegerField(
+        "situação", choices=QuoteLookupStatus.choices, default=QuoteLookupStatus.CREATED
+    )
+    checked_at = models.DateTimeField("consultado em", auto_now=True)
+
+    class Meta:
+        verbose_name = "consulta de cotação"
+        verbose_name_plural = "consultas de cotação"
+        ordering = ["-checked_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["model_year", "reference_table"], name="unique_lookup_per_reference"
+            ),
+        ]
+        indexes = [
+            # "o que ficou sem cotação no mês X" — the reason this table exists.
+            models.Index(fields=["reference_table", "status"], name="lookup_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.model_year} — {self.reference_table}: {self.get_status_display()}"
+
+
 class CrawlStatus(models.TextChoices):
     RUNNING = "running", "Em andamento"
     COMPLETED = "completed", "Concluída"

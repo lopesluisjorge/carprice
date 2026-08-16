@@ -66,6 +66,8 @@ VehicleModel     brand FK, fipe_code, name
 ModelYear        vehicle_model FK, year, fuel_type, fipe_year_code
 PriceQuote       model_year FK, reference_table FK, value, fuel_type, fipe_code, collected_at
                  unique(model_year, reference_table)
+QuoteLookup      model_year FK, reference_table FK, status, checked_at   # controle da consulta
+                 unique(model_year, reference_table)
 CrawlRun         reference_table FK, status, started_at, finished_at, counters, last_error
 CrawlCheckpoint  crawl_run FK, brand FK, done        # suporte a --resume
 ```
@@ -79,6 +81,24 @@ precificou, e permite ler a cotação sozinha. `FuelType`: 1 Gasolina, 2 Álcool
 4 Elétrico, 5 Flex. **A FIPE adiciona códigos sem avisar** — um código desconhecido é gravado
 como veio, aparecendo como número puro, em vez de virar gasolina silenciosamente. Se aparecer
 um número cru na UI, é isso: acrescente o código ao enum e a `FUEL_BY_LABEL`.
+
+`QuoteLookup` é o **controle da consulta de preço**: uma linha por versão/mês de referência, com o
+que a última consulta àquele par produziu. `QuoteLookupStatus`: 1 Criada, 2 Atualizada, 3 Sem
+cotação — smallint como os outros enums do schema (`VehicleType`, `FuelType`), já que a coluna
+repete por par/mês na segunda maior tabela do banco. O "sem cotação" é a parte que `PriceQuote` não
+consegue dizer: a FIPE lista combinações de ano/combustível que se
+recusa a precificar (é o `sem cotação para {ano}` do log), e sem essa linha um par sem cotação e um
+par nunca perguntado são indistinguíveis.
+
+A linha é gravada **no fim da consulta**, em `sync.upsert_quote` — o único caminho por onde a
+varredura e o worker sob demanda pedem preço. Nunca antes: linha criada de véspera afirmaria uma
+consulta que uma queda no meio não chegou a fazer. É `update_or_create`, então reconsultar o mesmo
+par atualiza o status e o `checked_at` em vez de empilhar histórico — o histórico de valores é o
+`PriceQuote`, e duplicar isso aqui só criaria duas verdades.
+
+Quem lê esse status é o worker sob demanda — veja "Recusas da FIPE" abaixo. A varredura do
+`crawl_fipe` não lê: ela é uma passada só por mês de referência e não repergunta nada de qualquer
+jeito.
 
 `vehicle_type` existe desde o início, mas **só carros são coletados por enquanto**. Motos e
 caminhões devem funcionar sem migração: qualquer código novo trata o tipo como parâmetro, nunca
@@ -205,8 +225,8 @@ passo anual.
 
 Dedup é por **cobertura de modelos**, não por semelhança de texto: um modelo pedido nas últimas
 48h não é pedido de novo, em qualquer status. Assim `palio fire` depois de `palio` não reagenda
-nada, e uma busca mais ampla agenda só a parte nova. Par `(versão, mês)` que já tem cotação é
-pulado, o que torna a repetição barata.
+nada, e uma busca mais ampla agenda só a parte nova. Par `(versão, mês)` que já tem cotação — ou
+que a FIPE já recusou, veja "Recusas da FIPE" — é pulado, o que torna a repetição barata.
 
 O orçamento (`--budget`) é **por pedido dentro de uma passada**: esgotado, o worker passa ao
 próximo pedido e retoma este na passada seguinte. Sem isso, uma busca por "gol" (16 mil
@@ -216,6 +236,22 @@ um retrato completo do mês corrente.
 
 Fronteira, agora com teste (`web/tests/test_boundary.py`): **`web` escreve pedido, nunca executa
 coleta.**
+
+### Recusas da FIPE
+
+Um par `(versão, mês)` é considerado resolvido de duas formas, e `collecting._settled` é quem
+decide: tem cotação, **ou** tem `QuoteLookup` com `NOT_FOUND`. Antes só a cotação contava, e como
+uma recusa nunca vira `PriceQuote`, o par era reperguntado em toda passada — para sempre.
+
+Não era só desperdício de cota: com o orçamento estourando **dentro** de um modelo cujos pares
+faltantes eram todos recusa, `_model_has_work_left` respondia "tem trabalho", o item voltava a
+`pending` e a passada seguinte gastava o mesmo orçamento nas mesmas 404. O pedido nunca chegava a
+`completed`. Reproduzido com três versões recusadas e `--budget 2`, e é o que o teste
+`test_a_tight_budget_no_longer_stalls_on_refusals` trava.
+
+A recusa é **definitiva no mês fechado** — aquela tabela não muda mais — e só provisória na tabela
+mais nova, que a FIPE ainda edita durante o mês: ali ela vale por `NOT_FOUND_RECHECK` (7 dias). Por
+isso `_settled` compara a referência com a mais nova do mapa, e não com a data de hoje.
 
 ### Limites do agendamento
 

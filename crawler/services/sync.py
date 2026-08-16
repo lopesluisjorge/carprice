@@ -24,6 +24,8 @@ from crawler.models import (
     CrawlStatus,
     ModelYear,
     PriceQuote,
+    QuoteLookup,
+    QuoteLookupStatus,
     ReferenceTable,
     VehicleModel,
     VehicleType,
@@ -480,12 +482,33 @@ class QuoteOutcome(enum.StrEnum):
     MISSING = "missing"
 
 
+LOOKUP_STATUS = {
+    QuoteOutcome.CREATED: QuoteLookupStatus.CREATED,
+    QuoteOutcome.UPDATED: QuoteLookupStatus.UPDATED,
+    QuoteOutcome.MISSING: QuoteLookupStatus.NOT_FOUND,
+}
+
+
 def upsert_quote(client, reference, vehicle_type, brand, vehicle_model, model_year):
     """Fetch and store one quote. Returns which of the three things happened.
 
     Counter-free so both callers can use it: the CrawlRun sweep and the
     on-demand worker, which has no run to count into.
     """
+    outcome = _fetch_quote(
+        client, reference, vehicle_type, brand, vehicle_model, model_year
+    )
+    # Written here, after the request resolved, and nowhere earlier: a row
+    # created up front would claim a lookup that a crash never made.
+    QuoteLookup.objects.update_or_create(
+        model_year=model_year,
+        reference_table=reference,
+        defaults={"status": LOOKUP_STATUS[outcome]},
+    )
+    return outcome
+
+
+def _fetch_quote(client, reference, vehicle_type, brand, vehicle_model, model_year):
     try:
         payload = client.price(
             reference.fipe_code,

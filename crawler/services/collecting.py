@@ -8,18 +8,26 @@ window inside one FipeClient, and a second worker would silently double it.
 import contextlib
 import fcntl
 import logging
+from datetime import timedelta
 
 from django.utils import timezone
 
 from crawler.models import CollectionRequest
 from crawler.models import CollectionStatus
 from crawler.models import PriceQuote
+from crawler.models import QuoteLookup
+from crawler.models import QuoteLookupStatus
 from crawler.services import scheduling
 from crawler.services import sync
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BUDGET = 1500
+
+# How long a refusal holds in the month FIPE is still editing. Long enough that
+# a model searched every day does not re-ask daily, short enough that a version
+# priced mid-month appears within the week.
+NOT_FOUND_RECHECK = timedelta(days=7)
 
 
 class QueueBusy(Exception):
@@ -84,10 +92,46 @@ def _work_plan(vehicle_model, today):
     return plan
 
 
+def _newest_reference(references):
+    """The table FIPE is still editing — the only one a refusal can outlive."""
+    newest_period = max(references, default=None)
+    return references.get(newest_period)
+
+
+def _settled(version, reference, newest):
+    """Is this pair done, i.e. would asking FIPE again teach nothing?
+
+    Two ways to be done. The quote is stored — or FIPE refused to price it,
+    which QuoteLookup is what remembers. The refusal is final in a closed month,
+    whose table never changes again; in the newest one it only holds for
+    NOT_FOUND_RECHECK, because FIPE does add prices during the month.
+
+    Without this the pairs FIPE refuses were re-asked on every pass forever, and
+    a model whose refusals alone exhausted the budget never left PENDING: the
+    next pass spent the same budget on the same 404s.
+    """
+    if PriceQuote.objects.filter(model_year=version, reference_table=reference).exists():
+        return True
+
+    checked_at = (
+        QuoteLookup.objects.filter(
+            model_year=version,
+            reference_table=reference,
+            status=QuoteLookupStatus.NOT_FOUND,
+        )
+        .values_list("checked_at", flat=True)
+        .first()
+    )
+    if checked_at is None:
+        return False
+    return reference != newest or timezone.now() - checked_at < NOT_FOUND_RECHECK
+
+
 def _collect_model(client, request, item, references, budget, today):
     """Spend at most `budget` requests on one model. Returns what it spent."""
     vehicle_model = item.vehicle_model
     brand = vehicle_model.brand
+    newest = _newest_reference(references)
     spent = 0
 
     for _, period, version in _work_plan(vehicle_model, today):
@@ -96,9 +140,7 @@ def _collect_model(client, request, item, references, budget, today):
         reference = references.get(period)
         if reference is None:
             continue  # FIPE has no table for that month; not an error.
-        if PriceQuote.objects.filter(
-            model_year=version, reference_table=reference
-        ).exists():
+        if _settled(version, reference, newest):
             continue
 
         outcome = sync.upsert_quote(
@@ -115,14 +157,13 @@ def _collect_model(client, request, item, references, budget, today):
 
 
 def _model_has_work_left(item, references, today):
-    """Is there any uncollected pair left for this model?"""
+    """Is there any pair left for this model that asking FIPE would settle?"""
+    newest = _newest_reference(references)
     for _, period, version in _work_plan(item.vehicle_model, today):
         reference = references.get(period)
         if reference is None:
             continue
-        if not PriceQuote.objects.filter(
-            model_year=version, reference_table=reference
-        ).exists():
+        if not _settled(version, reference, newest):
             return True
     return False
 

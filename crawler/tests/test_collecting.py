@@ -1,14 +1,18 @@
 import tempfile
 from datetime import date
+from datetime import timedelta
 from pathlib import Path
 
 from django.test import TestCase
+from django.utils import timezone
 
 from crawler.models import Brand
 from crawler.models import CollectionRequest
 from crawler.models import CollectionStatus
 from crawler.models import ModelYear
 from crawler.models import PriceQuote
+from crawler.models import QuoteLookup
+from crawler.models import QuoteLookupStatus
 from crawler.models import ReferenceTable
 from crawler.models import VehicleModel
 from crawler.services import collecting
@@ -119,6 +123,75 @@ class ProcessRequestTests(TestCase):
         self.assertGreater(request.quotes_missing, 0)
         self.assertEqual(request.quotes_created, 0)
         self.assertEqual(request.status, CollectionStatus.COMPLETED)
+        self.assertTrue(
+            QuoteLookup.objects.filter(status=QuoteLookupStatus.NOT_FOUND).exists()
+        )
+
+    def test_a_refusal_is_not_asked_again_inside_the_recheck_window(self):
+        request = self.schedule([build_model(years=(2024,))])
+        refusing = FakeFipeClient(missing={"2024-1"})
+        collecting.process_request(refusing, request, budget=100, today=TODAY)
+        asked = refusing.count("price")
+
+        request.items.update(status=CollectionStatus.PENDING)
+        collecting.process_request(refusing, request, budget=100, today=TODAY)
+
+        self.assertEqual(refusing.count("price"), asked)
+
+    def test_the_refusal_expires_and_the_newest_month_is_asked_again(self):
+        request = self.schedule([build_model(years=(2024,))])
+        refusing = FakeFipeClient(missing={"2024-1"})
+        collecting.process_request(refusing, request, budget=100, today=TODAY)
+        asked = refusing.count("price")
+
+        QuoteLookup.objects.update(
+            checked_at=timezone.now() - collecting.NOT_FOUND_RECHECK - timedelta(days=1)
+        )
+        request.items.update(status=CollectionStatus.PENDING)
+        collecting.process_request(refusing, request, budget=100, today=TODAY)
+
+        self.assertGreater(refusing.count("price"), asked)
+
+    def test_a_refusal_in_a_closed_month_never_expires(self):
+        # Reached directly: no version's period ladder lands on an older table
+        # in this fixture, and the rule is about the table, not the ladder.
+        version = build_model(years=(2024,)).model_years.get()
+        newest = ReferenceTable.objects.create(fipe_code=322, month=6, year=2025)
+        closed = ReferenceTable.objects.create(fipe_code=321, month=5, year=2025)
+        QuoteLookup.objects.create(
+            model_year=version,
+            reference_table=closed,
+            status=QuoteLookupStatus.NOT_FOUND,
+        )
+        QuoteLookup.objects.update(checked_at=timezone.now() - timedelta(days=3650))
+
+        self.assertTrue(collecting._settled(version, closed, newest))
+
+    def test_a_tight_budget_no_longer_stalls_on_refusals(self):
+        # Three versions FIPE refuses and room for two: the first pass must not
+        # leave a request that re-spends the same budget on the same 404s.
+        request = self.schedule([build_model(years=(2024, 2023, 2022))])
+        refusing = FakeFipeClient(missing={"2024-1", "2023-1", "2022-1"})
+
+        collecting.process_request(refusing, request, budget=2, today=TODAY)
+        request.refresh_from_db()
+        self.assertEqual(request.status, CollectionStatus.PARTIAL)
+
+        collecting.process_request(refusing, request, budget=2, today=TODAY)
+        request.refresh_from_db()
+        self.assertEqual(request.status, CollectionStatus.COMPLETED)
+        self.assertEqual(refusing.count("price"), 3)
+
+    def test_the_worker_records_a_lookup_for_every_pair_it_asks_for(self):
+        request = self.schedule([build_model(years=(2024,))])
+
+        collecting.process_request(self.client_, request, budget=100, today=TODAY)
+
+        request.refresh_from_db()
+        self.assertEqual(QuoteLookup.objects.count(), request.quotes_created)
+        self.assertEqual(
+            QuoteLookup.objects.exclude(status=QuoteLookupStatus.CREATED).count(), 0
+        )
 
 
 class LockTests(TestCase):

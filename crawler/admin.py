@@ -6,6 +6,7 @@ from crawler.models import (
     CrawlRun,
     ModelYear,
     PriceQuote,
+    QuoteLookup,
     ReferenceTable,
     VehicleModel,
 )
@@ -44,6 +45,13 @@ class PriceQuoteAdmin(admin.ModelAdmin):
     list_display = ["model_year", "reference_table", "value", "fuel_type", "fipe_code"]
     list_filter = ["reference_table", "fuel_type"]
     search_fields = ["fipe_code", "model_year__vehicle_model__name"]
+
+
+@admin.register(QuoteLookup)
+class QuoteLookupAdmin(admin.ModelAdmin):
+    list_display = ["model_year", "reference_table", "status", "checked_at"]
+    list_filter = ["status", "reference_table"]
+    search_fields = ["model_year__vehicle_model__name"]
 
 
 class CrawlCheckpointInline(admin.TabularInline):

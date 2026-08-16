@@ -10,6 +10,8 @@ from crawler.models import (
     FuelType,
     ModelYear,
     PriceQuote,
+    QuoteLookup,
+    QuoteLookupStatus,
     ReferenceTable,
     VehicleModel,
     VehicleType,
@@ -107,6 +109,26 @@ class SyncTests(TestCase):
         self.assertEqual(ModelYear.objects.count(), 3)
         self.assertEqual(run.quotes_created, 2)
         self.assertEqual(run.status, CrawlStatus.COMPLETED)
+
+    def test_records_one_lookup_per_pair_including_the_unpriced_one(self):
+        sync.sync(FakeFipeClient(missing={"2012-2"}))
+
+        self.assertEqual(QuoteLookup.objects.count(), 3)
+        self.assertEqual(
+            QuoteLookup.objects.filter(status=QuoteLookupStatus.NOT_FOUND)
+            .get()
+            .model_year.fipe_year_code,
+            "2012-2",
+        )
+
+    def test_a_second_sweep_updates_the_lookups_instead_of_duplicating(self):
+        sync.sync(self.client_)
+        sync.sync(FakeFipeClient())
+
+        self.assertEqual(QuoteLookup.objects.count(), 3)
+        self.assertEqual(
+            QuoteLookup.objects.filter(status=QuoteLookupStatus.UPDATED).count(), 3
+        )
 
     def test_brand_filter_produces_a_partial_run(self):
         run = sync.sync(self.client_, brand_codes=[21])
@@ -453,6 +475,35 @@ class UpsertQuoteTests(TestCase):
         self.client_ = FakeFipeClient(missing={"2013-1"})
         self.assertEqual(self.outcome(), sync.QuoteOutcome.MISSING)
         self.assertEqual(PriceQuote.objects.count(), 0)
+
+    def test_records_the_lookup_as_created_then_updated(self):
+        self.outcome()
+        lookup = QuoteLookup.objects.get()
+        self.assertEqual(lookup.status, QuoteLookupStatus.CREATED)
+        self.assertEqual(lookup.model_year, self.version)
+        self.assertEqual(lookup.reference_table, self.reference)
+
+        self.outcome()
+        lookup = QuoteLookup.objects.get()  # one row per pair, not one per attempt
+        self.assertEqual(lookup.status, QuoteLookupStatus.UPDATED)
+
+    def test_records_the_lookup_as_not_found_when_fipe_cannot_price_it(self):
+        self.client_ = FakeFipeClient(missing={"2013-1"})
+        self.outcome()
+        self.assertEqual(QuoteLookup.objects.get().status, QuoteLookupStatus.NOT_FOUND)
+
+    def test_a_failed_request_records_no_lookup(self):
+        self.client_ = ExplodingPriceClient()
+        with self.assertRaises(RuntimeError):
+            self.outcome()
+        self.assertEqual(QuoteLookup.objects.count(), 0)
+
+
+class ExplodingPriceClient(FakeFipeClient):
+    """Dies while asking for a price, simulating a lost connection."""
+
+    def price(self, *args, **kwargs):
+        raise RuntimeError("conexão perdida")
 
 
 class ExplodingClient(FakeFipeClient):
