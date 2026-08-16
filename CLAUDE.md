@@ -217,6 +217,35 @@ um retrato completo do mês corrente.
 Fronteira, agora com teste (`web/tests/test_boundary.py`): **`web` escreve pedido, nunca executa
 coleta.**
 
+### Limites do agendamento
+
+Quem dispara o agendamento é um **GET anônimo** — a própria tela de busca, sem sessão e sem
+cadastro. Um modelo agendado custa `versões × períodos` requisições à FIPE, a 40 por minuto, então
+a view **não decide quanto trabalho enfileira**: quem decide é `scheduling.py`, com três limites
+que não são arrumação e não devem ser afrouxados sem medir de novo.
+
+| | valor | o que impede |
+|---|---|---|
+| `MIN_TERM_LENGTH` | 2 | `?q=a` é prefixo: casava 450 modelos (~25 mil requisições, ~10h de worker) numa única carga de página |
+| `MAX_MODELS` | 24 | uma busca ampla virar dias de coleta; é ~uma tela de cards, os mais bem ranqueados |
+| `MAX_PENDING_MODELS` | 500 | termos distintos somarem o catálogo inteiro — o teto por busca sozinho não vê a fila |
+
+São **dois** por `MIN_TERM_LENGTH`, não três: `up` é um carro, e um piso de três faria do VW up! o
+único modelo que ninguém consegue agendar. Quem realmente contém uma busca ampla é o `MAX_MODELS`.
+
+O `MAX_MODELS` **retém trabalho, não descarta**: os modelos que sobraram continuam descobertos,
+então repetir a busca depois agenda a fatia seguinte. A cobertura cresce em páginas em vez de um
+estouro só. E com a fila cheia o `request_collection` devolve o pedido que já cobre a busca, em vez
+de `None` — senão a tela emudeceria enquanto o backlog drena.
+
+`TERM_MAX_LENGTH` sai de `CollectionRequest._meta` justamente para não divergir do campo: o termo é
+truncado na escrita porque um `?q=` acima de 200 caracteres virava `DataError` (500) no Postgres e
+gravava calado no SQLite — os dois engines discordando de uma querystring que qualquer um digita.
+
+Do lado de fora, o `deploy/nginx.conf` tem `limit_req` (30/min por IP, burst 20) no `location /`.
+É a metade que o nginx enxerga e o Django não faria tão barato; `/static/` fica de fora, que é o
+motivo de o limite morar no location e não no server.
+
 Os testes do worker fixam "hoje" em 06/2025, a tabela de referência mais nova das fixtures. Os
 períodos de uma versão saem da data corrente, então com a data real todo período pedido cairia
 fora do catálogo gravado e os testes passariam sem coletar nada.

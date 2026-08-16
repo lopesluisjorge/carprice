@@ -1,5 +1,6 @@
 from datetime import date
 from datetime import timedelta
+from unittest import mock
 
 from django.test import SimpleTestCase
 from django.test import TestCase
@@ -7,6 +8,7 @@ from django.utils import timezone
 
 from crawler.models import ZERO_KM_YEAR
 from crawler.models import Brand
+from crawler.models import CollectionItem
 from crawler.models import CollectionRequest
 from crawler.models import CollectionStatus
 from crawler.models import VehicleModel
@@ -120,3 +122,92 @@ class RequestCollectionTests(TestCase):
         )
 
         self.assertEqual(scheduling.request_collection("palio", self.ids).pk, first.pk)
+
+
+class SchedulingLimitsTests(TestCase):
+    """The limits that make an anonymous GET safe to serve.
+
+    Scheduling is reached straight from the search screen, with no session and
+    no rate of its own, so every one of these is load-bearing rather than
+    tidiness: one model costs its versions times its periods in FIPE requests.
+    """
+
+    def test_a_term_shorter_than_the_minimum_schedules_nothing(self):
+        # "a" is a prefix match: on a partly loaded database it reached 450
+        # models, some 25 thousand FIPE requests, from a single page load.
+        models = build_models(3)
+        ids = [model.pk for model in models]
+
+        for term in ["a", "  x  ", ""]:
+            self.assertIsNone(scheduling.request_collection(term, ids), term)
+        self.assertEqual(CollectionRequest.objects.count(), 0)
+
+    def test_the_minimum_still_lets_a_real_term_through(self):
+        ids = [model.pk for model in build_models(1)]
+
+        self.assertIsNotNone(scheduling.request_collection("uno", ids))
+
+    def test_a_two_letter_model_name_is_not_collateral(self):
+        # "up" is a car. The floor exists for the single-letter case only.
+        ids = [model.pk for model in build_models(1)]
+
+        self.assertIsNotNone(scheduling.request_collection("up", ids))
+
+    def test_a_term_longer_than_the_column_is_truncated(self):
+        # Postgres raises DataError on the overflow and the request becomes a
+        # 500; SQLite stores it and the two engines disagree. Neither is
+        # acceptable from a querystring anybody can type.
+        ids = [model.pk for model in build_models(1)]
+        term = "uno" + " " * 250 + "uno"
+
+        request = scheduling.request_collection(term, ids)
+
+        self.assertEqual(len(request.term), scheduling.TERM_MAX_LENGTH)
+        self.assertEqual(request.term, term[: scheduling.TERM_MAX_LENGTH])
+
+    def test_only_the_best_ranked_models_are_scheduled(self):
+        ids = [model.pk for model in build_models(scheduling.MAX_MODELS + 16)]
+
+        request = scheduling.request_collection("fiat", ids)
+
+        self.assertEqual(request.items.count(), scheduling.MAX_MODELS)
+        self.assertEqual(
+            list(request.items.values_list("vehicle_model_id", flat=True)),
+            ids[: scheduling.MAX_MODELS],
+        )
+
+    def test_the_models_left_out_are_picked_up_by_a_later_search(self):
+        # The cap withholds work, it does not discard it: the tail stays
+        # uncovered, so repeating the search schedules the next slice.
+        ids = [model.pk for model in build_models(scheduling.MAX_MODELS + 16)]
+        scheduling.request_collection("fiat", ids)
+
+        second = scheduling.request_collection("fiat", ids)
+
+        self.assertEqual(second.items.count(), 16)
+        self.assertEqual(
+            list(second.items.values_list("vehicle_model_id", flat=True)),
+            ids[scheduling.MAX_MODELS :],
+        )
+
+    def test_a_deep_queue_stops_scheduling_altogether(self):
+        # The per-search cap alone would let distinct terms add up to the whole
+        # catalogue; this is what bounds the queue itself.
+        ids = [model.pk for model in build_models(6)]
+        first = scheduling.request_collection("palio", ids[:3])
+
+        with mock.patch.object(scheduling, "MAX_PENDING_MODELS", 3):
+            self.assertIsNone(scheduling.request_collection("uno", ids[3:]))
+            self.assertEqual(CollectionRequest.objects.count(), 1)
+
+            # A repeat of what is already queued still reports its request, so
+            # the screen does not go silent while the backlog drains.
+            self.assertEqual(scheduling.request_collection("palio", ids[:3]).pk, first.pk)
+
+    def test_a_drained_queue_accepts_work_again(self):
+        ids = [model.pk for model in build_models(6)]
+        scheduling.request_collection("palio", ids[:3])
+        CollectionItem.objects.update(status=CollectionStatus.COMPLETED)
+
+        with mock.patch.object(scheduling, "MAX_PENDING_MODELS", 3):
+            self.assertIsNotNone(scheduling.request_collection("uno", ids[3:]))

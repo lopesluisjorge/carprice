@@ -87,8 +87,9 @@ def home(request):
         f"{reverse('web:home')}?{query}" if query else reverse("web:home")
     )
     # Only a term schedules work: tweaking the fuel or year filter must not
-    # queue thousands of FIPE requests. The whole match is scheduled, not just
-    # the visible page.
+    # queue thousands of FIPE requests. The whole match is handed over, but
+    # scheduling is what decides how much of it is collected — this is an
+    # anonymous GET, and how much work it may enqueue is not the view's call.
     context["collection"] = scheduling.request_collection(
         filters.term, search.search(filters.term) or []
     )
