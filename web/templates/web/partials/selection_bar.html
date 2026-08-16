@@ -1,16 +1,16 @@
 {# The comparison tray, visible on every screen that can add to it. Without it #}
 {# "+ comparar" would reload the page with no sign that anything happened. #}
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-  <p class="text-sm text-slate-600">
-    <span class="font-semibold text-slate-900">{{ selection_count }}</span>
+<div class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+  <p class="text-sm text-slate-600 dark:text-slate-300">
+    <span class="font-semibold text-slate-900 dark:text-slate-100">{{ selection_count }}</span>
     de {{ max_compared }} vers{{ selection_count|pluralize:"ão,ões" }} na comparação
   </p>
   <span class="flex items-center gap-3">
     {% if selection_clear_url %}
-      <a href="{{ selection_clear_url }}" class="text-sm font-medium text-slate-400 hover:text-rose-600">limpar</a>
+      <a href="{{ selection_clear_url }}" class="text-sm font-medium text-slate-400 hover:text-rose-600 dark:hover:text-rose-400">limpar</a>
     {% endif %}
     <a href="{% url 'web:compare' %}?{{ compare_query }}"
-       class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+       class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
       Comparar ({{ selection_count }})
     </a>
   </span>

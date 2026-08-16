@@ -1,5 +1,5 @@
 {% if collection %}
-  <p class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+  <p class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
     {% if collection.status == "completed" %}
       Histórico destes modelos coletado em {{ collection.finished_at|date:"d/m H:i" }}.
     {% elif collection.status == "partial" %}

@@ -3,8 +3,8 @@
 {% block title %}Buscar{% endblock %}
 
 {% block content %}
-  <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Buscar veículo</h1>
-  <p class="mt-2 text-slate-600">
+  <h1 class="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Buscar veículo</h1>
+  <p class="mt-2 text-slate-600 dark:text-slate-300">
     Digite o modelo. O preço vem da Tabela FIPE, com o histórico já coletado.
   </p>
 
@@ -16,9 +16,9 @@
     {% if selection %}<input type="hidden" name="c" value="{{ selection }}">{% endif %}
     <div class="flex gap-2">
       <input type="search" name="q" value="{{ filters.term }}" placeholder="corsa, uno mille, siena…"
-             class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30">
+             class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500">
       <button type="submit"
-              class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+              class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400">
         Buscar
       </button>
     </div>
@@ -28,9 +28,9 @@
     <div class="mt-6 grid gap-8 lg:grid-cols-[15rem_1fr]">
       <aside id="filters" class="space-y-6">
         <fieldset>
-          <legend class="text-sm font-medium text-slate-700">Marca</legend>
+          <legend class="text-sm font-medium text-slate-700 dark:text-slate-200">Marca</legend>
           <select name="brand"
-                  class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                  class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900">
             <option value="">todas</option>
             {% for value, label in brands %}
               <option value="{{ value }}" {% if filters.brand == value %}selected{% endif %}>{{ label }}</option>
@@ -39,13 +39,13 @@
         </fieldset>
 
         <fieldset>
-          <legend class="text-sm font-medium text-slate-700">Combustível</legend>
+          <legend class="text-sm font-medium text-slate-700 dark:text-slate-200">Combustível</legend>
           <div class="mt-2 space-y-1.5">
             {% for code, label in fuels %}
-              <label class="flex items-center gap-2 text-sm text-slate-600">
+              <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input type="checkbox" name="fuel" value="{{ code }}"
                        {% if code in filters.fuels %}checked{% endif %}
-                       class="rounded border-slate-300 text-blue-600 focus:ring-blue-500/30">
+                       class="rounded border-slate-300 text-blue-600 focus:ring-blue-500/30 dark:border-slate-600 dark:bg-slate-800 dark:text-blue-500">
                 {{ label }}
               </label>
             {% endfor %}
@@ -53,16 +53,16 @@
         </fieldset>
 
         <fieldset>
-          <legend class="text-sm font-medium text-slate-700">Ano</legend>
+          <legend class="text-sm font-medium text-slate-700 dark:text-slate-200">Ano</legend>
           <div class="mt-2 flex gap-2">
             <select name="year_op"
-                    class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                    class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900">
               {% for value, label in year_ops %}
                 <option value="{{ value }}" {% if filters.year_op == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
             <select name="year"
-                    class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                    class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900">
               <option value="">qualquer</option>
               {% for year in years %}
                 <option value="{{ year }}" {% if filters.year == year %}selected{% endif %}>{{ year }}</option>
@@ -72,16 +72,16 @@
         </fieldset>
 
         <fieldset>
-          <legend class="text-sm font-medium text-slate-700">Preço</legend>
+          <legend class="text-sm font-medium text-slate-700 dark:text-slate-200">Preço</legend>
           <div class="mt-2 flex gap-2">
             <select name="price_op"
-                    class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                    class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900">
               {% for value, label in price_ops %}
                 <option value="{{ value }}" {% if filters.price_op == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
             <select name="price"
-                    class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                    class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900">
               <option value="">qualquer</option>
               {% for value, label in price_steps %}
                 <option value="{{ value }}" {% if filters.price == value %}selected{% endif %}>{{ label }}</option>
@@ -91,9 +91,9 @@
         </fieldset>
 
         <fieldset>
-          <legend class="text-sm font-medium text-slate-700">Ordenar por</legend>
+          <legend class="text-sm font-medium text-slate-700 dark:text-slate-200">Ordenar por</legend>
           <select name="sort"
-                  class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">
+                  class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900">
             {% for value, label in sort_options %}
               <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}

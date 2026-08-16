@@ -5,19 +5,19 @@
 
 {% block content %}
   <a href="{% url 'web:home' %}{% if back_to_search %}?{{ back_to_search }}{% if selection_query %}&{{ selection_query }}{% endif %}{% elif selection_query %}?{{ selection_query }}{% endif %}"
-     class="text-sm font-medium text-slate-500 hover:text-slate-900">← voltar à busca</a>
+     class="text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">← voltar à busca</a>
 
-  <p class="mt-4 text-sm font-medium text-blue-600">{{ vehicle_model.brand.name }}</p>
-  <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+  <p class="mt-4 text-sm font-medium text-blue-600 dark:text-blue-400">{{ vehicle_model.brand.name }}</p>
+  <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl dark:text-slate-100">
     {{ vehicle_model.name }}
   </h1>
-  <p class="mt-2 text-sm text-slate-500">
+  <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
     {{ versions|length }} vers{{ versions|length|pluralize:"ão,ões" }}{% if reference_table %} · referência {{ reference_table }}{% endif %}
   </p>
 
-  <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+  <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
     <table class="w-full text-sm">
-      <thead class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+      <thead class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
         <tr>
           <th class="p-4">Ano</th>
           <th class="p-4">Combustível</th>
@@ -27,23 +27,23 @@
       </thead>
       <tbody>
         {% for version in versions %}
-          <tr class="border-b border-slate-100 last:border-0">
-            <td class="p-4 font-medium text-slate-900">{{ version|model_year_label }}</td>
-            <td class="p-4 text-slate-600">{{ version.get_fuel_type_display }}</td>
-            <td class="p-4 font-semibold text-slate-900">
+          <tr class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+            <td class="p-4 font-medium text-slate-900 dark:text-slate-100">{{ version|model_year_label }}</td>
+            <td class="p-4 text-slate-600 dark:text-slate-300">{{ version.get_fuel_type_display }}</td>
+            <td class="p-4 font-semibold text-slate-900 dark:text-slate-100">
               {% for quote in version.current_quotes %}{{ quote.value|brl }}{% empty %}—{% endfor %}
             </td>
             <td class="p-4 text-right whitespace-nowrap">
               <a href="{% url 'web:detail' %}?v={{ version.code|urlencode }}{% if selection_query %}&{{ selection_query }}{% endif %}"
-                 class="font-medium text-blue-600 hover:underline">histórico</a>
+                 class="font-medium text-blue-600 hover:underline dark:text-blue-400">histórico</a>
               {% if version.in_tray %}
                 <a href="{{ version.toggle_url }}"
-                   class="ml-3 font-medium text-emerald-600 hover:text-rose-600">✓ na comparação</a>
+                   class="ml-3 font-medium text-emerald-600 hover:text-rose-600 dark:text-emerald-400 dark:hover:text-rose-400">✓ na comparação</a>
               {% elif version.toggle_url %}
                 <a href="{{ version.toggle_url }}"
-                   class="ml-3 font-medium text-slate-500 hover:text-slate-900">+ comparar</a>
+                   class="ml-3 font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">+ comparar</a>
               {% else %}
-                <span class="ml-3 text-slate-300" title="Limite de {{ max_compared }} versões atingido">+ comparar</span>
+                <span class="ml-3 text-slate-300 dark:text-slate-600" title="Limite de {{ max_compared }} versões atingido">+ comparar</span>
               {% endif %}
             </td>
           </tr>

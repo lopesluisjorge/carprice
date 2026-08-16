@@ -1,5 +1,5 @@
 {% if page.object_list %}
-  <p class="mb-4 text-sm text-slate-500">
+  <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
     {{ page.paginator.count }} modelo{{ page.paginator.count|pluralize }} encontrado{{ page.paginator.count|pluralize }}
   </p>
   <div class="grid gap-4 sm:grid-cols-2">
@@ -9,28 +9,28 @@
     <nav class="mt-6 flex items-center justify-between text-sm">
       {% if previous_url %}
         <a href="?{{ previous_url }}{% if selection_query %}&{{ selection_query }}{% endif %}"
-           class="font-medium text-blue-600 hover:underline">← anteriores</a>
+           class="font-medium text-blue-600 hover:underline dark:text-blue-400">← anteriores</a>
       {% else %}<span></span>{% endif %}
-      <span class="text-slate-500">página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+      <span class="text-slate-500 dark:text-slate-400">página {{ page.number }} de {{ page.paginator.num_pages }}</span>
       {% if next_url %}
         <a href="?{{ next_url }}{% if selection_query %}&{{ selection_query }}{% endif %}"
-           class="font-medium text-blue-600 hover:underline">próximos →</a>
+           class="font-medium text-blue-600 hover:underline dark:text-blue-400">próximos →</a>
       {% else %}<span></span>{% endif %}
     </nav>
   {% endif %}
 {% else %}
-  <div class="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-12 text-center">
-    <p class="font-medium text-slate-700">Nenhum modelo encontrado</p>
-    <p class="mt-1 text-sm text-slate-500">
+  <div class="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900/40">
+    <p class="font-medium text-slate-700 dark:text-slate-200">Nenhum modelo encontrado</p>
+    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
       {% if filters.is_empty %}
-        O banco ainda não tem cotações. Rode <code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">python manage.py crawl_fipe</code>.
+        O banco ainda não tem cotações. Rode <code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-slate-800">python manage.py crawl_fipe</code>.
       {% else %}
         Tente outro termo ou afrouxe os filtros.
       {% endif %}
     </p>
     {% if not filters.is_empty %}
       <a href="{% url 'web:home' %}{% if selection_query %}?{{ selection_query }}{% endif %}"
-         class="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">limpar filtros</a>
+         class="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">limpar filtros</a>
     {% endif %}
   </div>
 {% endif %}

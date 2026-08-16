@@ -7,3 +7,36 @@
 /* The binary is run from the repo root, so point the class scan at the
    templates explicitly instead of relying on the working directory. */
 @source "../templates/**/*.html";
+
+/* `dark:` answers to two things at once, and the order below is the whole
+   point: with no `data-theme` on <html> the OS preference decides, so the site
+   follows the system theme even with JavaScript off; `data-theme` is only ever
+   written by an explicit choice, and it overrides the media query in both
+   directions. A class-only dark variant would leave a no-JS visitor on a dark
+   desktop staring at a white page. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(html:not([data-theme="light"]), html:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where(html[data-theme="dark"], html[data-theme="dark"] *) {
+    @slot;
+  }
+}
+
+/* Same three cases for `color-scheme`, which is what darkens the form controls
+   and the scrollbars the browser draws itself. */
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+}

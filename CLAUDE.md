@@ -236,6 +236,41 @@ Templates de fragmento HTMX ficam em `web/templates/web/partials/` e devolvem s�
 funciona com recarga de página. `hx-push-url` mantém o link copiável, e os filtros voltam
 iguais ao abrir a URL numa aba nova.
 
+### Tema claro e escuro
+
+O padrão é o tema do sistema, e **isso vale mesmo sem JavaScript** — foi por isso que o
+`dark:` não virou o `@custom-variant dark (&:where(.dark, .dark *))` que a documentação do
+Tailwind sugere. Com uma variante só de classe, quem tem JS desligado e desktop escuro tomaria
+uma página branca. O que está em `web/tailwind/input.css` tem dois ramos:
+
+```css
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) { &:where(html:not([data-theme="light"]), …) { @slot; } }
+  &:where(html[data-theme="dark"], …) { @slot; }
+}
+```
+
+**Ausência de `data-theme` no `<html>` é o estado "automático"**, não um terceiro tema: a mídia
+decide sozinha. O atributo só aparece quando alguém escolhe no seletor do cabeçalho, e aí vence
+a mídia nos dois sentidos. Os mesmos três casos se repetem no `color-scheme`, que é o que escurece
+os controles de formulário e as barras de rolagem que o navegador desenha por conta própria.
+
+O script do tema é **inline e no `<head>`**, antes do `body`: com `defer` ele só rodaria depois
+da primeira pintura e a tela piscaria branca. Ele expõe `window.theme` (`chosen`, `resolved`,
+`choose`) e dispara `theme:changed` no `document` — inclusive quando o sistema muda e não há
+escolha gravada. `localStorage` dentro de `try`: em janela privada a leitura estoura, e o
+fallback certo é o tema do sistema.
+
+O `<select>` do cabeçalho nasce com `hidden` e é ligado por script no fim do `body`. Sem JS ele
+não faria nada, e um controle morto é pior que controle nenhum — o tema do sistema já está valendo.
+
+**O gráfico não é CSS.** O ApexCharts pinta rótulos e grade sozinho, então `chart.html` lê
+`window.theme.resolved()` na hora de renderizar e **reconstrói o gráfico** no `theme:changed` —
+trocar o tema com o histórico aberto não pode deixar texto preto sobre fundo escuro.
+
+Mexer em qualquer classe `dark:` exige **rebuild do CSS** (`./tailwindcss -i … -o …`): o binário
+varre os templates, e classe que não existia no HTML não existe no `app.css`.
+
 ### A bandeja da comparação
 
 Sem sessão e sem estado no cliente: o que já foi escolhido viaja na querystring de **toda** tela

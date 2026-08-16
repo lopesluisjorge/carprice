@@ -5,31 +5,86 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}CarPrice{% endblock %} · CarPrice</title>
   <link rel="stylesheet" href="{% static 'web/app.css' %}">
+  {# Theme. Inline and before the body on purpose: a deferred script would only #}
+  {# run after the first paint, and the page would flash white. Nothing stored #}
+  {# means no `data-theme`, which is what leaves the CSS following the OS. #}
+  <script>
+    (function () {
+      var KEY = 'carprice-theme';
+      var root = document.documentElement;
+      var media = window.matchMedia('(prefers-color-scheme: dark)');
+
+      function stored() {
+        try {
+          var value = localStorage.getItem(KEY);
+          return value === 'dark' || value === 'light' ? value : null;
+        } catch (error) {
+          return null;  // private mode: fall back to the system theme
+        }
+      }
+
+      function apply(mode) {
+        if (mode) root.setAttribute('data-theme', mode);
+        else root.removeAttribute('data-theme');
+      }
+
+      function announce() {
+        document.dispatchEvent(new CustomEvent('theme:changed'));
+      }
+
+      window.theme = {
+        chosen: function () { return stored() || 'system'; },
+        resolved: function () { return stored() || (media.matches ? 'dark' : 'light'); },
+        choose: function (mode) {
+          var value = mode === 'dark' || mode === 'light' ? mode : null;
+          try {
+            if (value) localStorage.setItem(KEY, value);
+            else localStorage.removeItem(KEY);
+          } catch (error) { /* nothing to persist to; the page still switches */ }
+          apply(value);
+          announce();
+        },
+      };
+
+      apply(stored());
+      media.addEventListener('change', function () {
+        if (!stored()) announce();
+      });
+    })();
+  </script>
   {# Alpine entra aqui quando alguma tela precisar de estado de UI; hoje nenhuma precisa. #}
   <script defer src="{% static 'vendor/htmx.min.js' %}"></script>
 </head>
-<body class="flex min-h-full flex-col bg-slate-50 text-slate-900 antialiased">
-  <header class="border-b border-slate-200 bg-white">
+<body class="flex min-h-full flex-col bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+  <header class="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
     <div class="mx-auto flex max-w-5xl items-center justify-between gap-6 px-4 py-4">
       <a href="{% url 'web:home' %}" class="text-lg font-semibold tracking-tight">
-        Car<span class="text-blue-600">Price</span>
+        Car<span class="text-blue-600 dark:text-blue-400">Price</span>
       </a>
       <nav class="flex items-center gap-1 text-sm font-medium">
         {% url 'web:home' as home_url %}
         {% url 'web:compare' as compare_url %}
         <a href="{{ home_url }}"
-           class="rounded-lg px-3 py-1.5 {% if request.path == home_url %}bg-slate-100 text-slate-900{% else %}text-slate-500 hover:text-slate-900{% endif %}">Consultar</a>
+           class="rounded-lg px-3 py-1.5 {% if request.path == home_url %}bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100{% else %}text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100{% endif %}">Consultar</a>
         <a href="{{ compare_url }}{% if compare_query %}?{{ compare_query }}{% endif %}"
-           class="rounded-lg px-3 py-1.5 {% if request.path == compare_url %}bg-slate-100 text-slate-900{% else %}text-slate-500 hover:text-slate-900{% endif %}">
-          Comparar{% if selection_count %} <span class="rounded bg-blue-600 px-1.5 py-0.5 text-xs text-white">{{ selection_count }}</span>{% endif %}
+           class="rounded-lg px-3 py-1.5 {% if request.path == compare_url %}bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100{% else %}text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100{% endif %}">
+          Comparar{% if selection_count %} <span class="rounded bg-blue-600 px-1.5 py-0.5 text-xs text-white dark:bg-blue-500">{{ selection_count }}</span>{% endif %}
         </a>
+        {# Hidden until the script below turns it on: the control only does #}
+        {# anything with JavaScript, and without it the OS theme already wins. #}
+        <select id="theme-select" hidden aria-label="Tema"
+                class="ml-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          <option value="system">Automático</option>
+          <option value="light">Claro</option>
+          <option value="dark">Escuro</option>
+        </select>
       </nav>
     </div>
   </header>
 
   <main class="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:py-12">
     {% if message %}
-      <p class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <p class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
         {{ message }}
       </p>
     {% endif %}
@@ -40,13 +95,21 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="border-t border-slate-200 bg-white">
-    <div class="mx-auto max-w-5xl px-4 py-6 text-xs leading-relaxed text-slate-500">
+  <footer class="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <div class="mx-auto max-w-5xl px-4 py-6 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
       Preços da Tabela FIPE{% if reference_table %}, referência {{ reference_table }}{% endif %}.
       O histórico mostrado é o que já foi coletado — a FIPE publica apenas o mês vigente.
       Projeto de estudo, sem vínculo com a Fundação Instituto de Pesquisas Econômicas.
     </div>
   </footer>
+  <script>
+    (function () {
+      var select = document.getElementById('theme-select');
+      select.value = window.theme.chosen();
+      select.hidden = false;
+      select.addEventListener('change', function () { window.theme.choose(select.value); });
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
