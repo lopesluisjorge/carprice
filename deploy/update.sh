@@ -45,7 +45,13 @@ echo '==> Bytecode'
 # The units run with ProtectSystem=strict, so the tree is read-only at runtime
 # and Python cannot cache .pyc itself. Compiling now keeps the first request
 # after a deploy from paying for every import.
-sudo -u carprice "$PYTHON" -m compileall -q "$APP_DIR/carprice" "$APP_DIR/crawler" "$APP_DIR/web" || true
+#
+# -x is matched against the whole path, and it skips the test packages: neither
+# the web process nor the worker ever imports them, so compiling them only
+# writes bytecode nobody loads. It also keeps the step off the one directory
+# tree that has no business existing on a server at all.
+sudo -u carprice "$PYTHON" -m compileall -q -x '(^|/)tests?(/|$)' \
+    "$APP_DIR/carprice" "$APP_DIR/crawler" "$APP_DIR/web" || true
 
 echo '==> Serviços'
 # reload = graceful for gunicorn (in-flight requests finish). The worker has no
