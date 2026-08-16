@@ -5,10 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}CarPrice{% endblock %} · CarPrice</title>
   <link rel="stylesheet" href="{% static 'web/app.css' %}">
+  {# htmx only reads `new Function` for hx-on and js: expressions, which no #}
+  {# screen here uses. Turning it off means the CSP never needs unsafe-eval. #}
+  <meta name="htmx-config" content='{"allowEval": false}'>
   {# Theme. Inline and before the body on purpose: a deferred script would only #}
   {# run after the first paint, and the page would flash white. Nothing stored #}
   {# means no `data-theme`, which is what leaves the CSS following the OS. #}
-  <script>
+  {# The nonce is what the CSP allows it by; without it the theme dies quietly. #}
+  <script {% csp_nonce_attr %}>
     (function () {
       var KEY = 'carprice-theme';
       var root = document.documentElement;
@@ -102,7 +106,7 @@
       Projeto de estudo, sem vínculo com a Fundação Instituto de Pesquisas Econômicas.
     </div>
   </footer>
-  <script>
+  <script {% csp_nonce_attr %}>
     (function () {
       var select = document.getElementById('theme-select');
       select.value = window.theme.chosen();

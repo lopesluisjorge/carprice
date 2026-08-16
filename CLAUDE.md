@@ -340,6 +340,17 @@ Montados com códigos da FIPE e não com PKs, para o link continuar valendo em o
 de veículo vai na frente porque a FIPE numera marcas por tipo — a marca 21 de carro não é a
 mesma de moto.
 
+Os três decodificadores compartilham `_parts()`, e a validação lá **não é `str.isdigit()`**, que
+não é a garantia que o `int()` precisa. Dois buracos, os dois alcançáveis por querystring e os
+dois já vistos virando 500:
+
+- `?m=1-²-4712` — `'²'.isdigit()` é `True` e `int('²')` levanta `ValueError`;
+- `?m=1-21-<5000 noves>` — o CPython recusa converter acima de 4300 dígitos.
+
+Por isso é `part.isascii() and part.isdigit() and len(part) <= MAX_PART_DIGITS`. O `isascii()`
+não é preciosismo: `int('٣')` é 3, então sem ele todo código teria uma segunda grafia válida em
+algarismos arábicos — que não quebra nada e por isso é pior, passa despercebido.
+
 ### Busca
 
 `web/search.py` é o **único lugar com SQL cru** do projeto, e o único que sabe em qual banco
@@ -539,6 +550,45 @@ Três processos no servidor, e a fronteira entre dois deles é a que não dá pa
 
 O `mail.E001` é silenciado enquanto `EMAIL_HOST` estiver vazio: nada na aplicação manda e-mail
 hoje. Definir `EMAIL_HOST` troca para SMTP e devolve o check.
+
+O nginx tem `limit_req` em **dois** zones: `carprice_app` (30/min, burst 20) no `location /` e
+`carprice_admin` (10/min, burst 5) num `location /admin/` próprio, que vem antes. As linhas de
+`proxy_set_header` estão repetidas nele de propósito — o nginx não as herda de um location irmão,
+e uma cópia pela metade mandaria o admin para cima sem `X-Forwarded-Proto`, que é justamente o
+header que decide se o Django acha que o login está em HTTPS. Há um `allow`/`deny` comentado ali
+para quando a administração sair sempre do mesmo IP.
+
+### CSP
+
+`SECURE_CSP` nas settings, com o middleware e o context processor do **próprio Django** (6.0+) —
+sem `django-csp`, e os templates do admin já trazem `{% csp_nonce_attr %}` de fábrica.
+
+**Vale também em desenvolvimento**, de propósito: violação de CSP é mensagem no console do
+navegador de outra pessoa, nunca exceção que o servidor veja, então política que só existe em
+produção é política que ninguém testa.
+
+`script-src` é `'self'` mais **nonce** — os três blocos inline (o tema no `<head>`, o `<select>`
+no fim do `body`, o gráfico) levam `{% csp_nonce_attr %}`. **Tirar o nonce de um deles não quebra
+nenhum teste de renderização**: a página responde 200, o navegador é que recusa rodar o script e
+o tema simplesmente para de trocar. É por isso que `ContentSecurityPolicyTests` compara o header
+com a marcação em vez de só conferir que o header existe.
+
+`style-src` mantém `'unsafe-inline'` e `script-src` não, que é o ponto: estilo inline não executa
+nem exfiltra, e o ApexCharts injeta um `<style>` no SVG que desenha. **Não acrescente nonce ao
+`style-src`** — com nonce na diretiva o navegador passa a ignorar o `'unsafe-inline'`, e o
+gráfico perde o estilo.
+
+Sem `'unsafe-eval'`: o único `new Function` do htmx está no caminho de `hx-on`/`js:`, que nenhuma
+tela usa, e o `<meta name="htmx-config" content='{"allowEval": false}'>` no `base.html` desliga
+isso de vez. O ApexCharts não tem nenhum.
+
+`img-src` tem `data:` pelo caminho de exportação do ApexCharts, hoje inalcançável porque o
+gráfico usa `toolbar: {show: false}`. Ligar essa toolbar pede também `blob:`, que é para onde vai
+o download em PNG.
+
+O `json_script` do gráfico sai como `<script type="application/json">` e **não precisa de nonce**:
+é bloco de dados, o navegador nem tenta executar. E o `chart.html` lê o `textContent` dele, não um
+global exportado — então mesmo que algum navegador resolvesse bloquear, o gráfico continua de pé.
 
 ## Testes
 

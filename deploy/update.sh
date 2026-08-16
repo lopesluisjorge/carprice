@@ -16,7 +16,7 @@ PYTHON=$VENV/bin/python
 cd "$APP_DIR"
 
 echo '==> Código'
-git pull --ff-only
+sudo -u carprice git pull --ff-only
 
 echo '==> Dependências'
 # pip-sync, not pip install: it also removes what left requirements.txt, so the
@@ -31,21 +31,21 @@ echo '==> Configuração'
 # Errors abort the deploy here, before anything is restarted. Warnings only
 # print — SECURE_HSTS_SECONDS=0 is one, and is expected until HTTPS has been
 # confirmed working (docs/deploy.md).
-"$PYTHON" manage.py check --deploy
+sudo -u carprice "$PYTHON" manage.py check --deploy
 
 echo '==> Migrações'
-"$PYTHON" manage.py migrate --noinput
+sudo -u carprice "$PYTHON" manage.py migrate --noinput
 
 echo '==> Estáticos'
 # app.css comes from git already built — the tailwind binary is a development
 # tool and is not installed here.
-"$PYTHON" manage.py collectstatic --noinput --clear
+sudo -u carprice "$PYTHON" manage.py collectstatic --noinput --clear
 
 echo '==> Bytecode'
 # The units run with ProtectSystem=strict, so the tree is read-only at runtime
 # and Python cannot cache .pyc itself. Compiling now keeps the first request
 # after a deploy from paying for every import.
-"$PYTHON" -m compileall -q "$APP_DIR/carprice" "$APP_DIR/crawler" "$APP_DIR/web" || true
+sudo -u carprice "$PYTHON" -m compileall -q "$APP_DIR/carprice" "$APP_DIR/crawler" "$APP_DIR/web" || true
 
 echo '==> Serviços'
 # reload = graceful for gunicorn (in-flight requests finish). The worker has no

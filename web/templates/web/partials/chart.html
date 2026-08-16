@@ -6,7 +6,7 @@
     <div id="price-chart" class="mt-4"></div>
     {{ chart_series|json_script:"chart-series" }}
     <script defer src="{% static 'vendor/apexcharts.min.js' %}"></script>
-    <script>
+    <script {% csp_nonce_attr %}>
       (function () {
         var series = JSON.parse(document.getElementById('chart-series').textContent);
         var money = new Intl.NumberFormat('pt-BR', {

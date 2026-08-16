@@ -22,6 +22,34 @@ PARTS = 5
 MODEL_PARTS = 3
 BRAND_PARTS = 2
 
+# `str.isdigit()` is not the guarantee `int()` needs, and both gaps were
+# reachable from a querystring anybody can type:
+#
+#   ?m=1-²-4712        '²'.isdigit() is True and int('²') raises ValueError
+#   ?m=1-21-<5000 9s>  CPython refuses to convert past 4300 digits
+#
+# Either one was an uncaught ValueError — a 500 on /veiculo/, /modelo/ and the
+# brand filter. ASCII digits with a length cap is the whole fix: no FIPE code
+# comes near ten of them, the largest being the 32000 that means 0 km.
+MAX_PART_DIGITS = 10
+
+
+def _parts(code, count):
+    """The `count` numeric parts of `code`, or None if it is not one.
+
+    Shared by the three decoders so a code can never be validated one way here
+    and another way there — the only difference between them is how many parts
+    they expect.
+    """
+    parts = code.strip().split(SEPARATOR)
+    if len(parts) != count:
+        return None
+    if not all(
+        part.isascii() and part.isdigit() and len(part) <= MAX_PART_DIGITS for part in parts
+    ):
+        return None
+    return parts
+
 
 def encode(model_year):
     brand = model_year.vehicle_model.brand
@@ -37,8 +65,8 @@ def encode(model_year):
 
 def decode(code):
     """Turn a code into lookup filters, or None if it is not a valid code."""
-    parts = code.strip().split(SEPARATOR)
-    if len(parts) != PARTS or not all(part.isdigit() for part in parts):
+    parts = _parts(code, PARTS)
+    if parts is None:
         return None
     vehicle_type, brand, model, year, fuel = parts
     return {
@@ -66,8 +94,8 @@ def encode_model(vehicle_model):
 
 def decode_model(code):
     """Same discipline as the version code, three parts instead of five."""
-    parts = code.strip().split(SEPARATOR)
-    if len(parts) != MODEL_PARTS or not all(part.isdigit() for part in parts):
+    parts = _parts(code, MODEL_PARTS)
+    if parts is None:
         return None
     vehicle_type, brand, model = parts
     return {
@@ -96,8 +124,8 @@ def decode_brand(code):
     bare 21 would mean one brand for cars and another for motorcycles the day
     motorcycles are collected.
     """
-    parts = code.strip().split(SEPARATOR)
-    if len(parts) != BRAND_PARTS or not all(part.isdigit() for part in parts):
+    parts = _parts(code, BRAND_PARTS)
+    if parts is None:
         return None
     vehicle_type, fipe_code = parts
     return {"vehicle_type": int(vehicle_type), "fipe_code": int(fipe_code)}

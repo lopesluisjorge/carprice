@@ -14,6 +14,7 @@ from pathlib import Path
 
 import environ
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.csp import CSP
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -91,6 +92,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django.middleware.csp.ContentSecurityPolicyMiddleware',
 ]
 
 ROOT_URLCONF = 'carprice.urls'
@@ -105,6 +107,11 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Feeds {% csp_nonce_attr %}. Without it the tag renders
+                # nothing, the inline scripts lose their nonce and the theme
+                # stops switching — silently, since CSP failures are a console
+                # message and not an error the server ever sees.
+                'django.template.context_processors.csp',
             ],
         },
     },
@@ -270,6 +277,42 @@ LOGGING = {
 CRAWL_QUEUE_LOCK_PATH = Path(
     env('CRAWL_QUEUE_LOCK_PATH', default=str(BASE_DIR / '.crawl_queue.lock'))
 )
+
+
+# Content Security Policy
+# Django's own, since 6.0 — no third-party package, and the admin templates
+# already carry {% csp_nonce_attr %} themselves.
+#
+# Enforced in development too, on purpose. A CSP failure is a console message
+# in someone else's browser, not an exception the server ever sees, so a policy
+# that only exists in production is a policy nobody tests.
+
+SECURE_CSP = {
+    'default-src': [CSP.SELF],
+    # Every third-party script is a file under static/ (no CDN, by project
+    # rule), so 'self' covers them. The nonce is for the three inline blocks
+    # that cannot be files: the theme has to run before the first paint, and
+    # the chart reads the theme at render time.
+    'script-src': [CSP.SELF, CSP.NONCE],
+    # 'unsafe-inline' here and not on script-src, which is the whole point: an
+    # inline style cannot exfiltrate or execute, and ApexCharts styles the SVG
+    # it builds at runtime. Adding a nonce to this directive would make
+    # browsers ignore 'unsafe-inline' and break the chart.
+    'style-src': [CSP.SELF, CSP.UNSAFE_INLINE],
+    # The chart itself is inline SVG and needs nothing here. data: covers
+    # ApexCharts' export path, which builds a data:image/svg+xml — unreachable
+    # today because the chart sets toolbar.show to false. Turning that toolbar
+    # on would also want blob:, which is where the PNG download goes.
+    'img-src': [CSP.SELF, 'data:'],
+    'font-src': [CSP.SELF],
+    # HTMX only ever calls this origin back.
+    'connect-src': [CSP.SELF],
+    # X_FRAME_OPTIONS says the same thing to older browsers.
+    'frame-ancestors': [CSP.NONE],
+    'base-uri': [CSP.NONE],
+    'form-action': [CSP.SELF],
+    'object-src': [CSP.NONE],
+}
 
 
 # Security

@@ -261,3 +261,101 @@ class CollectionSchedulingTests(TestCase):
         # Not the bare word "histórico": the page tagline already carries it.
         response = self.client.get(reverse("web:home"))
         self.assertNotContains(response, "Coleta de histórico")
+
+
+class HostileQuerystringTests(TestCase):
+    """The screens hold up against a code nobody would type by accident.
+
+    These are the same payloads as web/tests/test_codes.py, one level up: what
+    matters here is the status, since an uncaught ValueError in `decode` came
+    out as a 500 rather than the "não encontrado" the screens are built to show.
+    """
+
+    def setUp(self):
+        model_year = build_vehicle()
+        add_quote(model_year, 2026, 8, "40000.00")
+
+    def test_a_hostile_version_code_is_not_found_rather_than_a_crash(self):
+        for part in ["²", "9" * 5000]:
+            with self.subTest(part=part[:8]):
+                response = self.client.get(reverse("web:detail"), {"v": f"1-21-{part}-2017-5"})
+                self.assertEqual(response.status_code, 404)
+
+    def test_a_hostile_model_code_is_not_found_rather_than_a_crash(self):
+        for part in ["²", "9" * 5000]:
+            with self.subTest(part=part[:8]):
+                response = self.client.get(reverse("web:model"), {"m": f"1-21-{part}"})
+                self.assertEqual(response.status_code, 404)
+
+    def test_a_hostile_brand_filter_is_ignored_rather_than_a_crash(self):
+        # The brand filter drops a code it cannot read instead of narrowing to
+        # nothing, so the cards are still there.
+        for part in ["²", "9" * 5000]:
+            with self.subTest(part=part[:8]):
+                response = self.client.get(reverse("web:home"), {"brand": f"1-{part}"})
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "500 Cult")
+
+    def test_a_hostile_code_in_the_comparison_tray_is_skipped(self):
+        response = self.client.get(reverse("web:compare"), {"v": f"1-21-{'9' * 5000}-2017-5"})
+        self.assertEqual(response.status_code, 200)
+
+
+class ContentSecurityPolicyTests(TestCase):
+    """The policy is only worth anything if the inline scripts carry its nonce.
+
+    A missing nonce is invisible server-side — the page renders, the browser
+    refuses to run the script, and the theme silently stops switching. So the
+    test is that the header and the markup agree.
+    """
+
+    def setUp(self):
+        self.model_year = build_vehicle()
+        add_quote(self.model_year, 2026, 8, "40000.00")
+        add_quote(self.model_year, 2026, 7, "39000.00")
+
+    def policy(self, response):
+        return response.headers["Content-Security-Policy"]
+
+    def test_the_header_is_sent(self):
+        policy = self.policy(self.client.get(reverse("web:home")))
+
+        self.assertIn("default-src 'self'", policy)
+        self.assertIn("object-src 'none'", policy)
+        self.assertIn("frame-ancestors 'none'", policy)
+
+    def test_scripts_are_never_unsafe_inline(self):
+        # The one directive where 'unsafe-inline' would give the whole policy
+        # away. Style keeps it on purpose; script must not.
+        policy = self.policy(self.client.get(reverse("web:home")))
+        script = [part for part in policy.split("; ") if part.startswith("script-src")][0]
+
+        self.assertNotIn("unsafe-inline", script)
+        self.assertNotIn("unsafe-eval", script)
+
+    def test_every_inline_script_carries_the_nonce_from_the_header(self):
+        for url, params in [
+            (reverse("web:home"), {}),
+            (reverse("web:detail"), {"v": codes.encode(self.model_year)}),
+        ]:
+            with self.subTest(url=url):
+                response = self.client.get(url, params)
+                html = response.content.decode()
+                nonce = self.policy(response).split("'nonce-")[1].split("'")[0]
+
+                # Every <script> without a src is inline and needs the nonce.
+                inline = [
+                    tag
+                    for tag in html.split("<script")[1:]
+                    if "src=" not in tag.split(">")[0]
+                    and 'type="application/json"' not in tag.split(">")[0]
+                ]
+                self.assertTrue(inline)
+                for tag in inline:
+                    self.assertIn(f'nonce="{nonce}"', tag.split(">")[0])
+
+    def test_the_nonce_changes_between_requests(self):
+        first = self.policy(self.client.get(reverse("web:home")))
+        second = self.policy(self.client.get(reverse("web:home")))
+
+        self.assertNotEqual(first, second)

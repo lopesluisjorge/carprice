@@ -57,3 +57,43 @@ class BrandCodeTests(TestCase):
         for code in ["", "abc", "1", "1-21-4712", "1-x"]:
             with self.subTest(code=code):
                 self.assertIsNone(codes.get_brand(code))
+
+
+class HostileCodeTests(TestCase):
+    """Codes that pass `isdigit()` and still blow up `int()`.
+
+    Both used to be an uncaught ValueError, which is a 500 on three screens
+    reachable without logging in. They resolve to nothing now, like any other
+    malformed code.
+    """
+
+    # A superscript is a digit to str.isdigit() and not a digit to int(); a
+    # string past 4300 digits is refused by CPython outright.
+    HOSTILE = ["²", "³", "①", "9" * 5000]
+
+    def test_a_version_code_survives_them(self):
+        for part in self.HOSTILE:
+            with self.subTest(part=part[:8]):
+                self.assertIsNone(codes.get(f"1-21-{part}-2017-5"))
+                self.assertIsNone(codes.get(f"1-{part}-4712-2017-5"))
+                self.assertIsNone(codes.get(f"1-21-4712-{part}-5"))
+
+    def test_a_model_code_survives_them(self):
+        for part in self.HOSTILE:
+            with self.subTest(part=part[:8]):
+                self.assertIsNone(codes.get_model(f"1-21-{part}"))
+
+    def test_a_brand_code_survives_them(self):
+        for part in self.HOSTILE:
+            with self.subTest(part=part[:8]):
+                self.assertIsNone(codes.get_brand(f"1-{part}"))
+
+    def test_non_ascii_digits_are_not_accepted(self):
+        # int('٣') is 3, so this one never crashed — it silently accepted a
+        # second spelling of every code, which is a worse kind of bug.
+        self.assertIsNone(codes.get_brand("1-٢١"))
+        self.assertIsNone(codes.get_model("1-21-٤٧١٢"))
+
+    def test_a_real_code_is_still_accepted(self):
+        model_year = build_vehicle()
+        self.assertEqual(codes.get(codes.encode(model_year)), model_year)
