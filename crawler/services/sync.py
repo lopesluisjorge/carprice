@@ -15,6 +15,7 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
+from crawler import engines
 from crawler.fipe import FipeNotFound
 from crawler.fipe import parsers
 from crawler.models import (
@@ -22,6 +23,7 @@ from crawler.models import (
     CrawlCheckpoint,
     CrawlRun,
     CrawlStatus,
+    EngineType,
     ModelYear,
     PriceQuote,
     QuoteLookup,
@@ -283,6 +285,31 @@ def _sync_models(
     return result
 
 
+def assign_engine_type(vehicle_model, fuel_types=None):
+    """Classify a model by its own name and store the resulting engine type.
+
+    The row in EngineType is created on the way — the set of engine sizes is
+    whatever the catalogue turns out to have, never a fixed list.
+
+    ``fuel_types`` are the fuel codes FIPE listed for the model, which is what
+    tells an electric apart from a model that simply names no displacement. The
+    caller passes the ones it just fetched; without them the stored years are
+    read instead.
+    """
+    if fuel_types is None:
+        fuel_types = (
+            vehicle_model.model_years.values_list("fuel_type", flat=True).order_by()
+        )
+    value = engines.classify(vehicle_model.name, fuel_types)
+    engine_type, _ = EngineType.objects.get_or_create(
+        value=value, defaults={"description": engines.describe(value)}
+    )
+    if vehicle_model.engine_type_id != engine_type.pk:
+        vehicle_model.engine_type = engine_type
+        vehicle_model.save(update_fields=["engine_type"])
+    return engine_type
+
+
 def _stored_model_codes(brand):
     """FIPE codes of this brand's models that already have their years.
 
@@ -330,6 +357,7 @@ def _sync_brand_models(
                 reference.fipe_code, vehicle_type, brand.fipe_code, vehicle_model.fipe_code
             )
         )
+        assign_engine_type(vehicle_model, [year.fuel_type for year in years])
         for year_data in years:
             _, created = ModelYear.objects.update_or_create(
                 vehicle_model=vehicle_model,
@@ -457,6 +485,9 @@ def _walk_models(client, run, reference, vehicle_type, brand, limit, report, sta
                 reference.fipe_code, vehicle_type, brand.fipe_code, vehicle_model.fipe_code
             )
         )
+        # Before the quotes, not after: --limit can cut the loop below short,
+        # and a model left unclassified would keep the search filter incomplete.
+        assign_engine_type(vehicle_model, [year.fuel_type for year in years])
 
         for year_data in years:
             model_year, _ = ModelYear.objects.get_or_create(

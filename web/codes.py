@@ -110,7 +110,9 @@ def get_model(code):
     filters = decode_model(code)
     if filters is None:
         return None
-    return VehicleModel.objects.select_related("brand").filter(**filters).first()
+    return (
+        VehicleModel.objects.select_related("brand", "engine_type").filter(**filters).first()
+    )
 
 
 def encode_brand(brand):

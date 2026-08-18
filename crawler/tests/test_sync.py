@@ -7,6 +7,7 @@ from crawler.models import (
     CrawlCheckpoint,
     CrawlRun,
     CrawlStatus,
+    EngineType,
     FuelType,
     ModelYear,
     PriceQuote,
@@ -142,6 +143,19 @@ class SyncTests(TestCase):
         self.assertEqual(PriceQuote.objects.count(), 1)
         self.assertEqual(run.status, CrawlStatus.RUNNING)
 
+    def test_classifies_the_engine_type_of_every_model(self):
+        sync.sync(self.client_)
+
+        # "Uno Mille 1.0" e "Palio EX 1.0": um tipo só, criado na passagem.
+        self.assertEqual([str(engine) for engine in EngineType.objects.all()], ["1.0"])
+        self.assertFalse(VehicleModel.objects.filter(engine_type=None).exists())
+
+    def test_the_engine_type_is_stored_even_when_the_limit_cuts_the_sweep(self):
+        # A classificação vem antes das cotações justamente por isso.
+        sync.sync(self.client_, limit=1)
+
+        self.assertTrue(VehicleModel.objects.exclude(engine_type=None).exists())
+
     def test_dry_run_writes_nothing(self):
         sync.sync(self.client_, dry_run=True)
 
@@ -214,6 +228,11 @@ class SyncModelsTests(TestCase):
         self.assertEqual(VehicleModel.objects.count(), 2)
         self.assertEqual(ModelYear.objects.count(), 3)
         self.assertEqual(PriceQuote.objects.count(), 0)
+
+    def test_classifies_the_engine_type_without_collecting_prices(self):
+        sync.sync_models(FakeFipeClient(), brand_codes=[21])
+
+        self.assertFalse(VehicleModel.objects.filter(engine_type=None).exists())
 
     def test_does_not_touch_the_price_endpoint(self):
         client = FakeFipeClient()

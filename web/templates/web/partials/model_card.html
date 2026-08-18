@@ -17,6 +17,8 @@
     {% else %}
       {{ card.min_year|year_label }}<span class="text-slate-400">–</span>{{ card.max_year|year_label }}
     {% endif %}
+    {# Falsy covers both "never classified" and the 0 of a name that never said it. #}
+    {% if card.vehicle_model.engine_type.value %} · {{ card.vehicle_model.engine_type }}{% endif %}
     · {{ card.reference_table }}
   </p>
 </a>

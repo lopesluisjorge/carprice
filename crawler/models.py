@@ -67,12 +67,47 @@ class Brand(models.Model):
         return self.name
 
 
+class EngineType(models.Model):
+    """An engine size, in liters — the "1.0" of "UNO MILLE 1.0 Fire".
+
+    A table and not a choices enum because FIPE has no such field: every value
+    here was read off a model name (``crawler.engines``), so the set is whatever
+    the catalogue happens to say and grows on its own as new models arrive.
+
+    ``value`` carries the whole classification, including what is not a
+    displacement: -1 electric, -2 a hybrid whose name gives no size, 0 a
+    combustion model whose name never said it. Hence ``description``, which is
+    the number itself for a real displacement and the label for the negatives.
+    """
+
+    value = models.DecimalField("valor", max_digits=3, decimal_places=1, unique=True)
+    description = models.CharField("descrição", max_length=30)
+
+    class Meta:
+        verbose_name = "tipo de motor"
+        verbose_name_plural = "tipos de motor"
+        ordering = ["value"]
+
+    def __str__(self):
+        return self.description
+
+
 class VehicleModel(models.Model):
     brand = models.ForeignKey(
         Brand, on_delete=models.CASCADE, related_name="models", verbose_name="marca"
     )
     fipe_code = models.PositiveIntegerField("código FIPE")
     name = models.CharField("nome", max_length=200)
+    # Null means "never classified", which is not the same as the 0 of a model
+    # whose name has no displacement: only the second one is a decision.
+    engine_type = models.ForeignKey(
+        EngineType,
+        on_delete=models.PROTECT,
+        related_name="models",
+        verbose_name="tipo de motor",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         verbose_name = "modelo"

@@ -12,21 +12,31 @@ from crawler.models import ModelYear
 from crawler.models import PriceQuote
 from crawler.models import ReferenceTable
 from crawler.models import VehicleModel
+from crawler.services import sync
 
 
 def build_vehicle(
-    brand_code=21, model_code=4712, year=2017, fuel=FuelType.FLEX, brand_name="Fiat"
+    brand_code=21,
+    model_code=4712,
+    year=2017,
+    fuel=FuelType.FLEX,
+    brand_name="Fiat",
+    name="500 Cult 1.4",
 ):
     brand, _ = Brand.objects.get_or_create(fipe_code=brand_code, defaults={"name": brand_name})
     vehicle_model, _ = VehicleModel.objects.get_or_create(
-        brand=brand, fipe_code=model_code, defaults={"name": "500 Cult 1.4"}
+        brand=brand, fipe_code=model_code, defaults={"name": name}
     )
-    return ModelYear.objects.create(
+    model_year = ModelYear.objects.create(
         vehicle_model=vehicle_model,
         fipe_year_code=f"{year}-{int(fuel)}",
         year=year,
         fuel_type=fuel,
     )
+    # Classified the same way the crawler does it, off the name and the fuels —
+    # a factory that stored a hand-picked engine type would test nothing.
+    sync.assign_engine_type(vehicle_model)
+    return model_year
 
 
 def add_quote(model_year, year, month, value):

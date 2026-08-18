@@ -4,6 +4,7 @@ from crawler.models import (
     Brand,
     CrawlCheckpoint,
     CrawlRun,
+    EngineType,
     ModelYear,
     PriceQuote,
     QuoteLookup,
@@ -25,10 +26,16 @@ class BrandAdmin(admin.ModelAdmin):
     search_fields = ["name"]
 
 
+@admin.register(EngineType)
+class EngineTypeAdmin(admin.ModelAdmin):
+    list_display = ["description", "value"]
+    search_fields = ["description"]
+
+
 @admin.register(VehicleModel)
 class VehicleModelAdmin(admin.ModelAdmin):
-    list_display = ["name", "brand", "fipe_code"]
-    list_filter = ["brand__vehicle_type"]
+    list_display = ["name", "brand", "engine_type", "fipe_code"]
+    list_filter = ["brand__vehicle_type", "engine_type"]
     search_fields = ["name"]
     autocomplete_fields = ["brand"]
 

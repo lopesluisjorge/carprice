@@ -41,6 +41,7 @@ carprice/          settings, urls, wsgi/asgi
 crawler/           domínio + coleta (dono do schema)
   fipe/client.py     HTTP puro: um método por endpoint, retry/backoff, rate limit
   fipe/parsers.py    JSON bruto -> dataclasses; sem acesso a banco
+  engines.py         cilindrada lida do nome do modelo; funções puras, sem banco
   services/sync.py   orquestração: percorre a árvore e faz upsert idempotente
   management/commands/crawl_fipe.py   CLI fina: argparse + progresso, nada de lógica
   models.py
@@ -62,7 +63,8 @@ Fronteira que não deve ser cruzada: **`web` nunca chama a FIPE**, só consulta 
 ```
 ReferenceTable   fipe_code, month, year              # tabela de referência mensal da FIPE
 Brand            fipe_code, name, vehicle_type       # CAR=1, MOTORCYCLE=2, TRUCK=3
-VehicleModel     brand FK, fipe_code, name
+EngineType       value, description                  # cilindrada; -1 elétrico, -2 híbrido, 0 sem
+VehicleModel     brand FK, fipe_code, name, engine_type FK
 ModelYear        vehicle_model FK, year, fuel_type, fipe_year_code
 PriceQuote       model_year FK, reference_table FK, value, fuel_type, fipe_code, collected_at
                  unique(model_year, reference_table)
@@ -81,6 +83,43 @@ precificou, e permite ler a cotação sozinha. `FuelType`: 1 Gasolina, 2 Álcool
 4 Elétrico, 5 Flex. **A FIPE adiciona códigos sem avisar** — um código desconhecido é gravado
 como veio, aparecendo como número puro, em vez de virar gasolina silenciosamente. Se aparecer
 um número cru na UI, é isso: acrescente o código ao enum e a `FUEL_BY_LABEL`.
+
+### Tipo de motor
+
+`EngineType` é a cilindrada — o "1.0" de `UNO MILLE 1.0 Fire`. **A FIPE não tem esse campo**: a
+única fonte é o próprio nome do modelo, então `crawler/engines.py` o lê de volta e `sync` grava o
+resultado em `VehicleModel.engine_type`. Tabela e não enum justamente por isso: os valores são o
+que o catálogo disser, e uma cilindrada nova entra sozinha na primeira coleta que a encontrar.
+
+`value` é numérico e carrega também o que não é cilindrada, que é o motivo de a `description`
+existir — ela é o número para uma cilindrada de verdade e o rótulo para os negativos:
+
+| valor | descrição | quando |
+|---|---|---|
+| `1.0`, `1.4`, … | o próprio número | o nome diz a cilindrada |
+| `-1` | Elétrico | não há litro nenhum a medir |
+| `-2` | Híbrido | híbrido **cujo nome não diz** a cilindrada; o `King GL 1.5 (Hibrido)` é um 1.5 |
+| `0` | Não informado | combustão, mas o nome nunca disse |
+
+O 0 é o único que o filtro da busca não oferece (`available_engines`): "não informado" não é algo
+que alguém procure, e oferecê-lo transformaria o filtro no balaio de todo modelo de nome econômico
+— são ~100 dos 1.861 modelos coletados. Continua consultável na mão pela URL, como um preço fora
+dos degraus.
+
+**Elétrico e híbrido saem dos combustíveis dos anos/modelo, não do nome.** A FIPE marca a maioria
+com `(Elétrico)`, mas não todos — o `Dolphin Mini GL` é tão elétrico quanto o `Dolphin Mini GS
+(Elétrico)`. O nome só é usado quando o modelo ainda não tem anos gravados, que é o que uma
+varredura interrompida deixa para trás.
+
+A leitura do nome tem dois formatos e uma armadilha em cada: `1.4` moderno e o `1000`/`2000` em
+centímetros cúbicos que a FIPE ainda usa nos anos 80/90 (`Gol 1000 Mi` é um 1.0). Os lookarounds
+do `_LITERS` não podem tocar dígito de nenhum lado — senão o caminhão `Delivery 9.170` viraria um
+9.1 — mas **só dígito**: `Ed.2.0` é um 2.0. O `_CC` recusa letra ou hífen à esquerda, senão o
+`F-4000` viraria um 4.0. Nome que lista várias (`Premio CS 1.6/ 1.5/ 1.3`) fica com a primeira.
+
+A classificação roda **antes das cotações** em `_walk_models`: `--limit` corta o laço no meio, e
+modelo sem classificar é buraco no filtro. `assign_engine_type` recebe os combustíveis que o
+chamador acabou de buscar; sem eles, lê os anos gravados.
 
 `QuoteLookup` é o **controle da consulta de preço**: uma linha por versão/mês de referência, com o
 que a última consulta àquele par produziu. `QuoteLookupStatus`: 1 Criada, 2 Atualizada, 3 Sem
@@ -288,7 +327,7 @@ fora do catálogo gravado e os testes passariam sem coletar nada.
 
 ## Web
 
-- Busca full-text (`/?q=corsa`), com filtros de marca, combustível, ano e preço ao lado, ordenação
+- Busca full-text (`/?q=corsa`), com filtros de marca, combustível, motor, ano e preço ao lado, ordenação
   por preço e cards embaixo.
 - Página do modelo (`/modelo/?m=1-21-4712`): todas as versões daquele modelo, com preço.
 - Detalhe da versão (`/veiculo/?v=code`): valor atual, variação 3/6/12 meses, gráfico do histórico.
@@ -480,6 +519,18 @@ descrever só as versões que casaram — igual ao que combustível e ano já fa
 pode mostrar `R$ 28.000 – R$ 30.000` de um modelo que também tem uma versão de 90 mil, e isso é o
 comportamento certo para "o que cabe no meu orçamento".
 
+**O motor é o único filtro que age no modelo**, e não na versão: a cilindrada é lida do nome do
+modelo, então ou o card inteiro casa ou some — ele não encolhe a contagem de versões nem a faixa
+de anos como combustível, ano e preço fazem. O valor viaja na URL como ele mesmo (`?engine=1.4`,
+`?engine=-1`) e não como id da linha, pelo mesmo motivo dos códigos da FIPE: o link continua
+valendo em outro banco. `_engine()` recusa `NaN` e `Infinity` — que o `Decimal()` aceita de bom
+grado — antes que cheguem a uma coluna `numeric(3, 1)`.
+
+**O `<option>` do motor leva `|unlocalize`, e sem isso o filtro não filtra.** Com `LANGUAGE_CODE`
+pt-br o Django renderiza `Decimal("1.0")` como `1,0`, então o formulário mandava `?engine=1,0`,
+que `_engine()` recusa — a tela voltava com todos os resultados e nenhum erro. Vale para qualquer
+decimal que vá parar num `value=`: ali é dado que precisa voltar legível, não texto de tela.
+
 O filtro de preço não tem "exatamente", ao contrário do de ano: com degraus fixos ele casaria só
 com o valor cravado e pareceria defeito. O default do operador também difere — ano é "a partir
 de", preço é "até", porque preço se procura por teto de orçamento.
@@ -656,6 +707,10 @@ de verdade, colete um segundo mês: `crawl_fipe --reference 2026-07 --brand 21`.
 
 A coleta da GM parou no "AGILE", então **"corsa" não devolve nada ainda** — não é falha da
 busca. Para testar com caso real use "siena", "uno" ou "aircross".
+
+A migração `0009` já classificou o motor dos 1.861 modelos desse banco: 36 cilindradas de 0.7 a
+6.5, mais 26 elétricos, 7 híbridos sem cilindrada e 97 sem nada no nome. Uma marca nova coletada
+depois disso se classifica sozinha na varredura.
 
 Os combustíveis 6 (Híbrido) e 7 (Tetrafuel) já foram nomeados; o próximo código desconhecido
 volta a aparecer como número cru, que é o comportamento desejado.

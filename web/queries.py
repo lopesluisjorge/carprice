@@ -10,7 +10,9 @@ from django.db.models import Max
 from django.db.models import Min
 from django.db.models import Prefetch
 
+from crawler import engines
 from crawler.models import Brand
+from crawler.models import EngineType
 from crawler.models import ModelYear
 from crawler.models import PriceQuote
 from crawler.models import ReferenceTable
@@ -65,6 +67,24 @@ def available_years():
     return sorted(years, reverse=True)
 
 
+def available_engines():
+    """The engine types some stored model actually has, minus the unknown one.
+
+    The 0 is left out on purpose: "não informado" is not something anyone
+    searches for, and offering it would turn a filter into a bin for every model
+    whose name happens to omit the displacement. It stays queryable by hand in
+    the URL, like an off-step price — the screen just never suggests it.
+
+    Whole rows, not values(), so Meta.ordering ["value"] is already in the
+    SELECT and DISTINCT means what it looks like it means.
+    """
+    return list(
+        EngineType.objects.exclude(value=engines.UNKNOWN)
+        .filter(models__isnull=False)
+        .distinct()
+    )
+
+
 def available_brands():
     """Brands with at least one quote in the newest reference table.
 
@@ -104,6 +124,13 @@ def search_models(filters):
             )
     if filters.fuels:
         model_years_qs = model_years_qs.filter(fuel_type__in=filters.fuels)
+    if filters.engine is not None:
+        # The only filter that lands on the model rather than on the version:
+        # the displacement is read off the model name, so every version of a
+        # model shares it.
+        model_years_qs = model_years_qs.filter(
+            vehicle_model__engine_type__value=filters.engine
+        )
     if filters.year is not None:
         model_years_qs = model_years_qs.filter(**{filters.year_lookup: filters.year})
 
@@ -150,7 +177,7 @@ def search_models(filters):
 
     # Only the page's models are loaded, never the whole result.
     ids = [row["model_year__vehicle_model"] for row in page]
-    models = VehicleModel.objects.select_related("brand").in_bulk(ids)
+    models = VehicleModel.objects.select_related("brand", "engine_type").in_bulk(ids)
     page.object_list = [
         row
         | {

@@ -63,6 +63,18 @@ class SearchScreenTests(TestCase):
             with self.subTest(field=field):
                 self.assertContains(response, field)
 
+    def test_the_engine_option_carries_a_value_the_filter_can_read_back(self):
+        # Em pt-BR o Decimal sai "1,0" no template, e o filtro voltava vazio: a
+        # opção precisa ir sem localização, porque o value é dado e não texto.
+        mille = build_vehicle(model_code=2, year=2015, name="UNO MILLE 1.0 Fire")
+        add_quote(mille, 2026, 8, "20000.00")
+        response = self.client.get(reverse("web:home"))
+        self.assertContains(response, 'value="1.0"')
+
+        filtered = self.client.get(reverse("web:home"), {"engine": "1.0"})
+        self.assertContains(filtered, "UNO MILLE 1.0 Fire")
+        self.assertNotContains(filtered, "Uno Mille Fire")
+
     def test_a_price_outside_the_steps_is_offered_back(self):
         # Sem isso a URL compartilhada mostraria um filtro diferente do que pede.
         response = self.client.get(reverse("web:home"), {"price": "43500"})

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.http import QueryDict
 from django.test import SimpleTestCase
 
@@ -59,6 +61,17 @@ class ParsingTests(SimpleTestCase):
         # O CLAUDE.md promete que a URL volta igual numa aba nova.
         self.assertEqual(parse("price=43500").price, 43500)
 
+    def test_reads_the_engine_field(self):
+        self.assertEqual(parse("engine=1.4").engine, Decimal("1.4"))
+        self.assertEqual(parse("engine=-1").engine, Decimal("-1"))
+        self.assertFalse(parse("engine=1.4").is_empty)
+
+    def test_junk_infinity_and_oversized_engines_disable_the_filter(self):
+        # Decimal() accepts "NaN" and "Infinity", and the column is numeric(3,1).
+        for querystring in ["engine=motor", "engine=NaN", "engine=Infinity", "engine=1E99"]:
+            with self.subTest(querystring=querystring):
+                self.assertIsNone(parse(querystring).engine)
+
     def test_unknown_sort_is_dropped(self):
         self.assertEqual(parse("sort=drop").sort, "")
 
@@ -70,7 +83,7 @@ class ParsingTests(SimpleTestCase):
 class QuerystringTests(SimpleTestCase):
     def test_round_trip(self):
         original = (
-            "q=corsa&brand=1-21&fuel=5&fuel=6&year_op=lte&year=2015"
+            "q=corsa&brand=1-21&fuel=5&fuel=6&engine=1.4&year_op=lte&year=2015"
             "&price_op=gte&price=50000&sort=price_asc&page=3"
         )
         self.assertEqual(parse(parse(original).querystring()), parse(original))
