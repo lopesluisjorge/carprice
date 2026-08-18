@@ -58,7 +58,6 @@ def _search_context(filters):
             (code, FUEL_LABELS.get(code, f"Combustível {code}"))
             for code in queries.available_fuels()
         ],
-        "engines": queries.available_engines(),
         "years": queries.available_years(),
         "brands": [
             (codes.encode_brand(brand), brand.name) for brand in queries.available_brands()

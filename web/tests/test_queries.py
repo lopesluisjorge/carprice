@@ -61,27 +61,6 @@ class AvailableFacetsTests(TestCase):
         build_vehicle(model_code=1, year=ZERO_KM_YEAR, fuel=FuelType.FLEX)
         self.assertEqual(queries.available_years(), [])
 
-    def test_engines_are_offered_once_and_never_the_unknown_one(self):
-        build_vehicle(model_code=1, year=2015, name="UNO MILLE 1.0 Fire")
-        build_vehicle(model_code=1, year=2016, name="UNO MILLE 1.0 Fire")
-        build_vehicle(model_code=2, year=2017, name="500 Cult 1.4")
-        # Sem cilindrada no nome: vira 0 e o filtro não o oferece.
-        build_vehicle(model_code=3, year=2018, name="323iA Confort")
-
-        offered = queries.available_engines()
-        self.assertEqual([engine.value for engine in offered], [Decimal("1.0"), Decimal("1.4")])
-        self.assertEqual([engine.description for engine in offered], ["1.0", "1.4"])
-
-    def test_the_electric_and_hybrid_codes_are_offered_by_their_name(self):
-        build_vehicle(model_code=1, year=2024, fuel=FuelType.ELECTRIC, name="Dolphin Mini GL")
-        build_vehicle(
-            model_code=2, year=2024, fuel=FuelType.HYBRID, name="PULSE AUDACE T. 200 Aut."
-        )
-        self.assertEqual(
-            [engine.description for engine in queries.available_engines()],
-            ["Híbrido", "Elétrico"],
-        )
-
     def test_brands_are_offered_once_and_only_when_priced(self):
         # Mais estrito que os outros facets de propósito: entre ~100 marcas, uma
         # opção que não devolve nada vira lista de decepções.
@@ -180,19 +159,6 @@ class SearchModelsTests(TestCase):
         add_quote(other, 2026, 8, "50000.00")
         page = queries.search_models(SearchFilters(brand="1-13"))
         self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {9})
-
-    def test_engine_filter_keeps_only_that_displacement(self):
-        # Os do setUp são "500 Cult 1.4"; este é o único 1.0.
-        mille = build_vehicle(model_code=9, year=2015, name="UNO MILLE 1.0 Fire")
-        add_quote(mille, 2026, 8, "20000.00")
-        page = queries.search_models(SearchFilters(engine=Decimal("1.0")))
-        self.assertEqual({c["vehicle_model"].fipe_code for c in page}, {9})
-
-    def test_the_engine_filter_narrows_the_model_not_the_versions(self):
-        # Cilindrada é do modelo: casando, todas as versões dele continuam no card.
-        page = queries.search_models(SearchFilters(engine=Decimal("1.4")))
-        card = next(c for c in page if c["vehicle_model"].fipe_code == 1)
-        self.assertEqual(card["versions"], 2)
 
     def test_a_malformed_brand_code_disables_the_filter(self):
         # Mesmo comportamento de um ano não-numérico: desliga o filtro em vez de

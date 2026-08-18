@@ -101,10 +101,12 @@ existir — ela é o número para uma cilindrada de verdade e o rótulo para os 
 | `-2` | Híbrido | híbrido **cujo nome não diz** a cilindrada; o `King GL 1.5 (Hibrido)` é um 1.5 |
 | `0` | Não informado | combustão, mas o nome nunca disse |
 
-O 0 é o único que o filtro da busca não oferece (`available_engines`): "não informado" não é algo
-que alguém procure, e oferecê-lo transformaria o filtro no balaio de todo modelo de nome econômico
-— são ~100 dos 1.861 modelos coletados. Continua consultável na mão pela URL, como um preço fora
-dos degraus.
+**Não há filtro de motor na busca**, e isso é uma decisão, não uma pendência: a coluna existe,
+está classificada e aparece no card e na página do modelo, mas a barra lateral não a oferece. Se
+um dia voltar, o 0 fica de fora — "não informado" não é algo que alguém procure, e são ~100 dos
+1.861 modelos coletados. E o `<option>` vai precisar de `|unlocalize`: com `LANGUAGE_CODE` pt-br
+o Django renderiza `Decimal("1.0")` como `1,0`, o formulário manda `?engine=1,0` e a tela volta
+com tudo, sem filtro e sem erro. Foi exatamente esse o bug da primeira versão.
 
 **Elétrico e híbrido saem dos combustíveis dos anos/modelo, não do nome.** A FIPE marca a maioria
 com `(Elétrico)`, mas não todos — o `Dolphin Mini GL` é tão elétrico quanto o `Dolphin Mini GS
@@ -327,7 +329,7 @@ fora do catálogo gravado e os testes passariam sem coletar nada.
 
 ## Web
 
-- Busca full-text (`/?q=corsa`), com filtros de marca, combustível, motor, ano e preço ao lado, ordenação
+- Busca full-text (`/?q=corsa`), com filtros de marca, combustível, ano e preço ao lado, ordenação
   por preço e cards embaixo.
 - Página do modelo (`/modelo/?m=1-21-4712`): todas as versões daquele modelo, com preço.
 - Detalhe da versão (`/veiculo/?v=code`): valor atual, variação 3/6/12 meses, gráfico do histórico.
@@ -518,18 +520,6 @@ modelo aparece se tiver **ao menos uma versão** na faixa, e a faixa e a contage
 descrever só as versões que casaram — igual ao que combustível e ano já fazem. Então "até 30 mil"
 pode mostrar `R$ 28.000 – R$ 30.000` de um modelo que também tem uma versão de 90 mil, e isso é o
 comportamento certo para "o que cabe no meu orçamento".
-
-**O motor é o único filtro que age no modelo**, e não na versão: a cilindrada é lida do nome do
-modelo, então ou o card inteiro casa ou some — ele não encolhe a contagem de versões nem a faixa
-de anos como combustível, ano e preço fazem. O valor viaja na URL como ele mesmo (`?engine=1.4`,
-`?engine=-1`) e não como id da linha, pelo mesmo motivo dos códigos da FIPE: o link continua
-valendo em outro banco. `_engine()` recusa `NaN` e `Infinity` — que o `Decimal()` aceita de bom
-grado — antes que cheguem a uma coluna `numeric(3, 1)`.
-
-**O `<option>` do motor leva `|unlocalize`, e sem isso o filtro não filtra.** Com `LANGUAGE_CODE`
-pt-br o Django renderiza `Decimal("1.0")` como `1,0`, então o formulário mandava `?engine=1,0`,
-que `_engine()` recusa — a tela voltava com todos os resultados e nenhum erro. Vale para qualquer
-decimal que vá parar num `value=`: ali é dado que precisa voltar legível, não texto de tela.
 
 O filtro de preço não tem "exatamente", ao contrário do de ano: com degraus fixos ele casaria só
 com o valor cravado e pareceria defeito. O default do operador também difere — ano é "a partir

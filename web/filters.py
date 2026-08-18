@@ -5,7 +5,6 @@ asked" is a plain dataclass, testable without a database.
 """
 
 import dataclasses
-from decimal import Decimal
 from urllib.parse import urlencode
 
 # Operator -> ORM lookup. The 0 km year (32000) needs no special case: `gte`
@@ -29,11 +28,6 @@ PRICE_STEPS = [10_000, 20_000, 30_000, 50_000, 75_000, 100_000, 150_000, 200_000
 SORTS = ("price_asc", "price_desc")
 
 
-# The engine type travels as its own value ("1.4", "-1"), not as a row id: like
-# the FIPE codes, it keeps a shared link meaningful in another database.
-MAX_ENGINE_VALUE = Decimal("99.9")
-
-
 def _int(value, default=None):
     try:
         return int(value)
@@ -41,28 +35,11 @@ def _int(value, default=None):
         return default
 
 
-def _engine(value):
-    """A displacement from the querystring, or None.
-
-    Decimal() accepts "NaN" and "Infinity" and refuses nothing about size, so
-    neither the range nor the finiteness check is decoration: both reach the
-    column, and the column is numeric(3, 1).
-    """
-    try:
-        number = Decimal(value)
-    except (TypeError, ValueError, ArithmeticError):
-        return None
-    if not number.is_finite() or abs(number) > MAX_ENGINE_VALUE:
-        return None
-    return number
-
-
 @dataclasses.dataclass(frozen=True)
 class SearchFilters:
     term: str = ""
     brand: str = ""
     fuels: tuple = ()
-    engine: Decimal | None = None
     year_op: str = DEFAULT_YEAR_OP
     year: int | None = None
     price_op: str = DEFAULT_PRICE_OP
@@ -86,7 +63,6 @@ class SearchFilters:
             term=query.get("q", "").strip(),
             brand=query.get("brand", "").strip(),
             fuels=tuple(fuels),
-            engine=_engine(query.get("engine")),
             year_op=year_op if year_op in YEAR_LOOKUPS else DEFAULT_YEAR_OP,
             year=_int(query.get("year")),
             price_op=price_op if price_op in PRICE_LOOKUPS else DEFAULT_PRICE_OP,
@@ -106,7 +82,6 @@ class SearchFilters:
             not self.term
             and not self.brand
             and not self.fuels
-            and self.engine is None
             and self.year is None
             and self.price is None
         )
@@ -125,7 +100,6 @@ class SearchFilters:
             "q": self.term,
             "brand": self.brand,
             "fuel": list(self.fuels),
-            "engine": self.engine,
             "year_op": self.year_op if self.year is not None else "",
             "year": self.year,
             "price_op": self.price_op if self.price is not None else "",
