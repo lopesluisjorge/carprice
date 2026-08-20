@@ -377,6 +377,27 @@ trocar o tema com o histórico aberto não pode deixar texto preto sobre fundo e
 Mexer em qualquer classe `dark:` exige **rebuild do CSS** (`./tailwindcss -i … -o …`): o binário
 varre os templates, e classe que não existia no HTML não existe no `app.css`.
 
+### O ícone
+
+`web/static/web/favicon.svg` é a **fonte**; o `.ico` e o `apple-touch-icon.png` ao lado são
+derivados dele e estão commitados, porque o deploy não tem rasterizador:
+
+```bash
+sed 's/rx="14"/rx="0"/' web/static/web/favicon.svg > /tmp/apple.svg   # o iOS aplica a própria máscara
+rsvg-convert -w 180 -h 180 /tmp/apple.svg -o web/static/web/apple-touch-icon.png
+for w in 16 32 48; do rsvg-convert -w $w -h $w web/static/web/favicon.svg -o /tmp/ico-$w.png; done
+# os três PNGs viram as entradas do favicon.ico (PNG dentro de ICO, aceito por todo navegador atual)
+```
+
+O `<link>` do SVG vem **antes** do `.ico`: quem entende SVG usa um arquivo só em qualquer tamanho,
+e o `.ico` fica para Safari e navegadores mais antigos, que escolhem pelo `sizes`.
+
+O ícone **segue o tema do sistema, não o seletor do cabeçalho**, e não há como ser diferente: o
+SVG do favicon é um documento à parte, sem o CSS da página e fora do alcance do script do tema. Por
+isso a peça é azul nos dois temas (o `prefers-color-scheme` lá dentro só clareia o azul), em vez de
+inverter figura e fundo — um ícone que dependesse do tema mostraria o tema errado justamente para
+quem escolheu o contrário do sistema.
+
 ### A bandeja da comparação
 
 Sem sessão e sem estado no cliente: o que já foi escolhido viaja na querystring de **toda** tela

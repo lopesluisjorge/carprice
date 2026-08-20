@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}CarPrice{% endblock %} · CarPrice</title>
   <link rel="stylesheet" href="{% static 'web/app.css' %}">
+  {# SVG first: browsers that understand it scale one file to every size; #}
+  {# the .ico is the fallback for Safari and the older ones. #}
+  <link rel="icon" href="{% static 'web/favicon.svg' %}" type="image/svg+xml">
+  <link rel="icon" href="{% static 'web/favicon.ico' %}" sizes="32x32">
+  <link rel="apple-touch-icon" href="{% static 'web/apple-touch-icon.png' %}">
   {# htmx only reads `new Function` for hx-on and js: expressions, which no #}
   {# screen here uses. Turning it off means the CSP never needs unsafe-eval. #}
   <meta name="htmx-config" content='{"allowEval": false}'>
