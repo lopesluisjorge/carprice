@@ -2,7 +2,7 @@
 #     pip-compile requirements.in
 #
 # Runtime, in the order they matter:
-Django==6.1
+Django==6.1.1
 django-environ        # reads DATABASE_URL and the rest of the environment
 psycopg[binary]       # Postgres driver; the binary wheel avoids a build toolchain
 gunicorn              # WSGI server (the systemd unit runs this, never runserver)
